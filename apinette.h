@@ -32,6 +32,7 @@ typedef struct {
   struct curl_slist *headers;
   char *body;
   size_t body_len;
+  char *err;
 } response;
 
 typedef struct request {

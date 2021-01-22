@@ -9,21 +9,22 @@
 #include "utlist.h"
 #include "utstring.h"
 
-char *apinette_error_printf(char *format, ...) {
+char *apinette_printf(char *format, ...) {
   va_list va;
   UT_string *s;
-  char *err;
+  char *buf;
 
   va_start(va, format);
   utstring_new(s);
   utstring_printf_va(s, format, va);
   size_t len = utstring_len(s);
-  err = malloc(len + 1);
-  memcpy(err, utstring_body(s), len);
+  buf = malloc(len + 1);
+  memcpy(buf, utstring_body(s), len);
+  buf[len] = 0;
   utstring_free(s);
   va_end(va);
 
-  return err;
+  return buf;
 }
 
 void apinette_init(char **err) {
@@ -31,7 +32,7 @@ void apinette_init(char **err) {
 
   res = curl_global_init(CURL_GLOBAL_DEFAULT);
   if (res != 0) {
-    *err = apinette_error_printf("%s", curl_easy_strerror(res));
+    *err = apinette_printf("%s", curl_easy_strerror(res));
     return;
   }
 }
@@ -102,14 +103,11 @@ static void apinette_add_request(CURLM *cm, request *req, char **err) {
 
   c = curl_easy_init();
   if (!c) {
-    *err = apinette_error_printf(*err, "Cannot init request");
+    *err = apinette_printf(*err, "Cannot init request");
   }
 
   req->resp = malloc(sizeof(response));
-  req->resp->status = 0;
-  req->resp->headers = NULL;
-  req->resp->body = NULL;
-  req->resp->body_len = 0;
+  memset(req->resp, 0, sizeof(response));
 
   // curl_easy_setopt(c, CURLOPT_VERBOSE, 1L);
   curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, apinette_write_body);
@@ -158,7 +156,7 @@ void apinette_parallel(request *head, char **err) {
 
   cm = curl_multi_init();
   if (!cm) {
-    *err = apinette_error_printf("Cannot init parallel requests");
+    *err = apinette_printf("Cannot init parallel requests");
     return;
   }
 
@@ -173,31 +171,22 @@ void apinette_parallel(request *head, char **err) {
     curl_multi_perform(cm, &running);
 
     while ((msg = curl_multi_info_read(cm, &msgs_left))) {
+      CURL *c = msg->easy_handle;
+      request *req;
+      curl_easy_getinfo(c, CURLINFO_PRIVATE, &req);
       if (msg->msg == CURLMSG_DONE) {
-        CURL *c = msg->easy_handle;
-        request *req;
         long status;
-        curl_easy_getinfo(c, CURLINFO_PRIVATE, &req);
         curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &status);
         req->resp->status = (int)status;
         if (msg->data.result > 0) {
-          fprintf(stderr, "%s - %s\n", req->path,
-                  curl_easy_strerror(msg->data.result));
-        } else if ((status < 200) || (status >= 400)) {
-          fprintf(stderr, "%s - status %ld\n", req->path, status);
-          cJSON *json =
-              cJSON_ParseWithLength(req->resp->body, req->resp->body_len);
-          if (json) {
-            char *s = cJSON_Print(json);
-            fprintf(stderr, "%s\n", s);
-            free(s);
-          }
-          cJSON_Delete(json);
+          req->resp->err =
+              apinette_printf("%s", curl_easy_strerror(msg->data.result));
         }
         curl_multi_remove_handle(cm, c);
         curl_easy_cleanup(c);
       } else {
-        fprintf(stderr, "%d\n", msg->msg);
+        req->resp->err =
+            apinette_printf("Unexpected message type: %d", msg->msg);
       }
 
       if (running) {

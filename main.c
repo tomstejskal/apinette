@@ -56,11 +56,34 @@ int main(int argc, char **argv) {
     goto end;
   }
 
+  DL_FOREACH(head, req) {
+    if (req->resp->err) {
+      fprintf(stderr, "%s - %s\n", req->path, req->resp->err);
+    }
+    if (req->resp->status >= 400) {
+      fprintf(stderr, "%s - status: %d\n", req->path, req->resp->status);
+      if (req->resp->body) {
+        cJSON *json;
+        json = cJSON_ParseWithLength(req->resp->body, req->resp->body_len);
+        if (json) {
+          char *s = cJSON_Print(json);
+          fprintf(stderr, "%s\n", s);
+          free(s);
+          cJSON_Delete(json);
+        } else {
+          fwrite(req->resp->body, 1, req->resp->body_len, stderr);
+          fputs("\n", stderr);
+        }
+      }
+    }
+  }
+
 end:
   DL_FOREACH_SAFE(head, req, tmp) {
     DL_DELETE(head, req);
     curl_slist_free_all(req->headers);
     free(req->resp->body);
+    free(req->resp->err);
     free(req->resp);
     free(req);
   }
