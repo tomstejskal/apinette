@@ -59,6 +59,8 @@ int main(int argc, char **argv) {
 end:
   DL_FOREACH_SAFE(head, req, tmp) {
     DL_DELETE(head, req);
+    curl_slist_free_all(req->headers);
+    free(req->resp->body);
     free(req->resp);
     free(req);
   }

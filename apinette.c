@@ -118,6 +118,7 @@ static void apinette_add_request(CURLM *cm, request *req, char **err) {
   utstring_printf(url, "%s://%s%s%s", apinette_proto_str(req->api->proto),
                   req->api->host, req->api->path, req->path);
   curl_easy_setopt(c, CURLOPT_URL, utstring_body(url));
+  utstring_free(url);
   curl_easy_setopt(c, CURLOPT_PRIVATE, req);
 
   apinette_add_header(req, HEADER_ACCEPT, MIME_JSON);
