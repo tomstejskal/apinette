@@ -1,10 +1,12 @@
+#include <cjson/cJSON.h>
 #include <curl/curl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <utstring.h>
 
 #include "base64.h"
+#include "utlist.h"
+#include "utstring.h"
 
 #define HEADER_ACCEPT "Accept"
 #define HEADER_AUTHORIZATION "Authorization"
@@ -38,7 +40,7 @@ typedef struct {
   size_t body_len;
 } response;
 
-typedef struct {
+typedef struct request {
   api *api;
   method method;
   char *path;
@@ -46,6 +48,8 @@ typedef struct {
   char *body;
   size_t body_len;
   response *resp;
+  struct request *prev;
+  struct request *next;
 } request;
 
 static void init(UT_string **err) {
@@ -112,9 +116,9 @@ static size_t write_cb(char *ptr, size_t n, size_t l, request *req) {
   size_t len;
 
   len = n * l;
-  req->body = realloc(req->body, req->body_len + len);
-  memcpy(req->body + req->body_len, ptr, len);
-  req->body_len += len;
+  req->resp->body = realloc(req->resp->body, req->resp->body_len + len);
+  memcpy(req->resp->body + req->resp->body_len, ptr, len);
+  req->resp->body_len += len;
 
   return len;
 }
@@ -135,7 +139,7 @@ static void add_request(CURLM *cm, request *req, UT_string **err) {
   req->resp->body = NULL;
   req->resp->body_len = 0;
 
-  curl_easy_setopt(c, CURLOPT_VERBOSE, 1L);
+  // curl_easy_setopt(c, CURLOPT_VERBOSE, 1L);
   curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, write_cb);
   curl_easy_setopt(c, CURLOPT_WRITEDATA, req);
   utstring_new(url);
@@ -174,12 +178,12 @@ static void add_request(CURLM *cm, request *req, UT_string **err) {
   curl_multi_add_handle(cm, c);
 }
 
-static void parallel(request **reqs, int req_len, UT_string **err) {
+static void parallel(request *reqs, UT_string **err) {
   CURLM *cm;
   CURLMsg *msg;
-  int i;
   int running = 1;
   int msgs_left = -1;
+  request *req;
 
   cm = curl_multi_init();
   if (!cm) {
@@ -188,8 +192,8 @@ static void parallel(request **reqs, int req_len, UT_string **err) {
     return;
   }
 
-  for (i = 0; i < req_len; i++) {
-    add_request(cm, reqs[i], err);
+  DL_FOREACH(reqs, req) {
+    add_request(cm, req, err);
     if (*err) {
       return;
     }
@@ -206,6 +210,20 @@ static void parallel(request **reqs, int req_len, UT_string **err) {
         curl_easy_getinfo(c, CURLINFO_PRIVATE, &req);
         curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &status);
         req->resp->status = (int)status;
+        if (msg->data.result > 0) {
+          fprintf(stderr, "%s - %s\n", req->path,
+                  curl_easy_strerror(msg->data.result));
+        } else if ((status < 200) || (status >= 400)) {
+          fprintf(stderr, "%s - status %ld\n", req->path, status);
+          cJSON *json =
+              cJSON_ParseWithLength(req->resp->body, req->resp->body_len);
+          if (json) {
+            char *s = cJSON_Print(json);
+            fprintf(stderr, "%s\n", s);
+            free(s);
+          }
+          cJSON_Delete(json);
+        }
         curl_multi_remove_handle(cm, c);
         curl_easy_cleanup(c);
       } else {
@@ -221,11 +239,24 @@ static void parallel(request **reqs, int req_len, UT_string **err) {
   curl_multi_cleanup(cm);
 }
 
+static request *new_request(api *api, method method, char *path) {
+  request *req;
+
+  req = malloc(sizeof(request));
+  memset(req, 0, sizeof(request));
+  req->api = api;
+  req->method = method;
+  req->path = path;
+
+  return req;
+}
+
 int main(int argc, char **argv) {
   UT_string *err = NULL;
   api api;
   basic_auth *auth;
-  request *reqs[4];
+  request *reqs = NULL;
+  request *req;
 
   (void)argc;
   (void)argv;
@@ -245,31 +276,20 @@ int main(int argc, char **argv) {
   auth->passwd = "";
   api.auth = auth;
 
-  reqs[0] = malloc(sizeof(request));
-  memset(reqs[0], 0, sizeof(request));
-  reqs[0]->api = &api;
-  reqs[0]->method = METHOD_GET;
-  reqs[0]->path = "/firms";
+  req = new_request(&api, METHOD_GET, "/firms");
+  DL_APPEND(reqs, req);
+  req = new_request(&api, METHOD_GET, "/issuedinvoices");
+  DL_APPEND(reqs, req);
+  req = new_request(&api, METHOD_GET, "/issuedorders");
+  DL_APPEND(reqs, req);
+  req = new_request(&api, METHOD_GET, "/receivedorders");
+  DL_APPEND(reqs, req);
+  req = new_request(&api, METHOD_GET, "/storecards");
+  DL_APPEND(reqs, req);
+  req = new_request(&api, METHOD_GET, "/storeprices");
+  DL_APPEND(reqs, req);
 
-  reqs[1] = malloc(sizeof(request));
-  memset(reqs[1], 0, sizeof(request));
-  reqs[1]->api = &api;
-  reqs[1]->method = METHOD_GET;
-  reqs[1]->path = "/issuedinvoices";
-
-  reqs[2] = malloc(sizeof(request));
-  memset(reqs[2], 0, sizeof(request));
-  reqs[2]->api = &api;
-  reqs[2]->method = METHOD_GET;
-  reqs[2]->path = "/firms";
-
-  reqs[3] = malloc(sizeof(request));
-  memset(reqs[3], 0, sizeof(request));
-  reqs[3]->api = &api;
-  reqs[3]->method = METHOD_GET;
-  reqs[3]->path = "/issuedinvoices";
-
-  parallel(reqs, 4, &err);
+  parallel(reqs, &err);
 
   cleanup();
   return EXIT_SUCCESS;
