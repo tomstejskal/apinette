@@ -7,7 +7,7 @@ lua = dependency('lua', version : '>=5.4')
 cjson = dependency('libcjson', version : '>=1.7')
 
 exe = executable('apinette',
-  ['main.c', 'base64.c'],
+  ['main.c', 'apinette.c', 'base64.c'],
   install : true,
   dependencies : [curl, lua, cjson])
 
