@@ -219,8 +219,3 @@ request *apinette_new_request(api *api, method method, char *path) {
 
   return req;
 }
-
-request *apinette_append_request(request *head, request *req) {
-  DL_APPEND(head, req);
-  return head;
-}

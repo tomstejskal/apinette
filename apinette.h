@@ -56,6 +56,4 @@ void apinette_parallel(request *head, char **err);
 
 request *apinette_new_request(api *api, method method, char *path);
 
-request *apinette_append_request(request *head, request *req);
-
 #endif // APINETTE_H
