@@ -1,60 +1,84 @@
 #ifndef APINETTE_H
 
+#include <lua.h>
 #include <stdlib.h>
 
-#define HEADER_ACCEPT "Accept"
-#define HEADER_AUTHORIZATION "Authorization"
-#define HEADER_CONTENT_TYPE "Content-Type"
+#define API_HEADER_ACCEPT "Accept"
+#define API_HEADER_AUTHORIZATION "Authorization"
+#define API_HEADER_CONTENT_TYPE "Content-Type"
 
-#define MIME_JSON "application/json"
+#define API_MIME_JSON "application/json"
 
-typedef enum { PROTO_HTTP, PROTO_HTTPS } proto;
+#define API_PROTO_HTTP_STR "http"
+#define API_PROTO_HTTPS_STR "https"
 
-typedef enum { METHOD_GET, METHOD_POST, METHOD_PUT, METHOD_DELETE } method;
+typedef enum API_userdata_type {
+  API_TYPE_API,
+  API_TYPE_AUTH,
+  API_TYPE_REQUEST
+} API_userdata_type;
 
-typedef enum { AUTH_NONE, AUTH_BASIC } auth_type;
+typedef enum API_proto { API_PROTO_HTTP, API_PROTO_HTTPS } API_proto;
 
-typedef struct {
+typedef enum API_method {
+  API_METHOD_GET,
+  API_METHOD_POST,
+  API_METHOD_PUT,
+  API_METHOD_DELETE
+} API_method;
+
+typedef enum API_auth_type { API_AUTH_NONE, API_AUTH_BASIC } API_auth_type;
+
+typedef struct API_basic_auth {
   char *user;
   char *passwd;
-} basic_auth;
+} API_basic_auth;
 
-typedef struct {
-  proto proto;
+typedef struct API_auth {
+  API_auth_type typ;
+  union {
+    API_basic_auth *basic;
+  };
+} API_auth;
+
+typedef struct API_api {
+  API_proto proto;
   char *host;
   char *path;
-  auth_type auth_type;
+  API_auth_type auth_type;
   void *auth;
-} api;
+} API_api;
 
-typedef struct {
+typedef struct API_response {
   int status;
   struct curl_slist *headers;
   char *body;
   size_t body_len;
   char *err;
-} response;
+} API_response;
 
-typedef struct request {
-  api *api;
-  method method;
+typedef struct API_request {
+  API_api *api;
+  API_method method;
   char *path;
   struct curl_slist *headers;
   char *body;
   size_t body_len;
-  response *resp;
-  struct request *prev;
-  struct request *next;
-} request;
+  API_response *resp;
+  struct API_request *prev;
+  struct API_request *next;
+} API_request;
 
-char *apinette_printf(char *format, ...);
+char *api_printf(char *format, ...);
 
-void apinette_init(char **err);
+void api_init(char **err);
 
-void apinette_cleanup(void);
+void api_init_lua(lua_State *L);
 
-void apinette_parallel(request *head, char **err);
+void api_cleanup(void);
 
-request *apinette_new_request(api *api, method method, char *path);
+void api_parallel(API_request *head, char **err);
+
+API_request *api_new_request(API_api *api, API_method method, char *path);
 
 #endif // APINETTE_H
