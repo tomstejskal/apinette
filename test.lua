@@ -7,20 +7,30 @@ abra = api {
 }
 
 result = send {
-  abra.get "/firms?select=id,code,name&where=code+eq+'foo'",
-  abra.post { path = "/firms?select=id,code,name", body = '{"code":"foo","name":"Foo"}' }, 
-  abra.put { path = "/firms/2800000101?select=id,code,name", body = '{"name":"Bar"}' },
-  abra.delete "/firms/3800000101"
+  abra.get "/firms"
 }
 
-for i = 1, #result do 
-  local resp = result[i]
-  if resp.err then
-    print(resp.err)
-  else
-    print(i .. ' - status: ' .. resp.status)
-    print(resp.body)
-    print()
-  end
-end
+json = from_json(result[1].body);
+
+for i = 1, #json do
+  print(json[i].id, json[i].code, json[i].name)
+end;
+
+--result = send {
+  --abra.get "/firms?select=id,code,name&where=code+eq+'foo'",
+  --abra.post { path = "/firms?select=id,code,name", body = '{"code":"foo","name":"Foo"}' }, 
+  --abra.put { path = "/firms/2800000101?select=id,code,name", body = '{"name":"Bar"}' },
+  --abra.delete "/firms/3800000101"
+--}
+
+--for i = 1, #result do 
+  --local resp = result[i]
+  --if resp.err then
+    --print(resp.err)
+  --else
+    --print(i .. ' - status: ' .. resp.status)
+    --print(resp.body)
+    --print()
+  --end
+--end
 

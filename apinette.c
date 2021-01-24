@@ -533,6 +533,67 @@ int l_send(lua_State *L) {
   return 1;
 }
 
+void l_read_json(lua_State *L, cJSON *json) {
+  cJSON *item;
+  int i;
+
+  if (cJSON_IsFalse(json)) {
+    lua_pushboolean(L, 0);
+  } else if (cJSON_IsTrue(json)) {
+    lua_pushboolean(L, 1);
+  } else if (cJSON_IsNull(json)) {
+    lua_pushnil(L);
+  } else if (cJSON_IsNumber(json)) {
+    lua_pushnumber(L, json->valuedouble);
+  } else if (cJSON_IsString(json)) {
+    lua_pushstring(L, json->valuestring);
+  } else if (cJSON_IsArray(json)) {
+    lua_newtable(L);
+    i = 1;
+    cJSON_ArrayForEach(item, json) {
+      l_read_json(L, item);
+      lua_seti(L, -2, i);
+      i++;
+    }
+  } else if (cJSON_IsObject(json)) {
+    lua_newtable(L);
+    cJSON_ArrayForEach(item, json) {
+      l_read_json(L, item);
+      lua_setfield(L, -2, item->string);
+    }
+  } else {
+    lua_pushnil(L);
+  }
+}
+
+int l_from_json(lua_State *L) {
+  cJSON *json;
+  const char *tmp;
+  char *err;
+
+  if (lua_type(L, -1) != LUA_TSTRING) {
+    lua_pushstring(L, "from_json: expecting string as an argument");
+    lua_error(L);
+  }
+
+  json = cJSON_ParseWithOpts(lua_tostring(L, -1), &tmp, 1);
+  if (!json) {
+    err = api_printf("from_json: error in json at '%s'", tmp);
+    lua_pushstring(L, err);
+    free(err);
+    lua_error(L);
+  }
+
+  l_read_json(L, json);
+  cJSON_Delete(json);
+  return 1;
+}
+
+int l_to_json(lua_State *L) {
+  (void)L;
+  return 0;
+}
+
 void api_init_lua(lua_State *L) {
   // http constant
   l_setglobalstrconst(L, API_PROTO_HTTP_STR);
@@ -548,4 +609,10 @@ void api_init_lua(lua_State *L) {
 
   // send function
   lua_register(L, "send", l_send);
+
+  // from_json function
+  lua_register(L, "from_json", l_from_json);
+
+  // to_json function
+  lua_register(L, "to_json", l_to_json);
 }
