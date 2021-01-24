@@ -16,17 +16,17 @@ function print_firms(firms)
   end;
 end
 
-print_firms(from_json(send {
-  abra.get "/firms"
-}[1].body))
+result = send { abra.get "/firms" }
+print_firms(from_json(result[1].body))
 
-print_firm(from_json(send {
-  abra.push {
+result = send {
+  abra.post {
     path = "/firms",
     body = to_json({ code = "abc", name = "ABC" })
   }
-}[1].body))
+}
 
+print_firm(from_json(result[1].body))
 
 
 --result = send {

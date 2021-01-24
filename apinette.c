@@ -230,6 +230,18 @@ API_request *api_new_request(API_api *api, API_method method, char *path) {
 static int l_api_gc(lua_State *L) {
   API_api *api = lua_touserdata(L, -1);
 
+  if (api->auth) {
+    switch (api->auth->typ) {
+    case API_AUTH_BASIC:
+      if (api->auth->basic) {
+        free(api->auth->basic->user);
+        free(api->auth->basic->passwd);
+        free(api->auth->basic);
+      }
+      break;
+    }
+    free(api->auth);
+  }
   free(api->host);
   free(api->path);
 
@@ -401,9 +413,11 @@ static int l_auth_gc(lua_State *L) {
 
   switch (auth->typ) {
   case API_AUTH_BASIC:
-    free(auth->basic->user);
-    free(auth->basic->passwd);
-    free(auth->basic);
+    if (auth->basic) {
+      free(auth->basic->user);
+      free(auth->basic->passwd);
+      free(auth->basic);
+    }
     break;
   }
   return 0;
@@ -412,6 +426,7 @@ static int l_auth_gc(lua_State *L) {
 static int l_api(lua_State *L) {
   API_api *api = lua_newuserdatauv(L, sizeof(API_api), 1);
   const char *s;
+  API_auth *auth;
 
   memset(api, 0, sizeof(API_api));
 
@@ -445,13 +460,24 @@ static int l_api(lua_State *L) {
 
   lua_pushstring(L, "auth");
   lua_gettable(L, -3);
-  lua_getiuservalue(L, -1, 1);
-  if (lua_tointeger(L, -1) != API_TYPE_AUTH) {
-    lua_pushstring(L, "api: 'auth' is not an auth type");
-    lua_error(L);
+  if (!lua_isnil(L, -1)) {
+    lua_getiuservalue(L, -1, 1);
+    if (lua_tointeger(L, -1) != API_TYPE_AUTH) {
+      lua_pushstring(L, "api: 'auth' is not an auth type");
+      lua_error(L);
+    }
+    auth = lua_touserdata(L, -2);
+    api->auth = malloc(sizeof(API_auth));
+    api->auth->typ = auth->typ;
+    switch (auth->typ) {
+    case API_AUTH_BASIC:
+      api->auth->basic = auth->basic;
+      auth->basic = NULL;
+      break;
+    }
+    lua_pop(L, 1);
   }
-  api->auth = lua_touserdata(L, -2);
-  lua_pop(L, 2);
+  lua_pop(L, 1);
 
   lua_newtable(L);
   lua_pushstring(L, "__gc");
@@ -569,6 +595,7 @@ void l_read_json(lua_State *L, cJSON *json) {
 cJSON *l_write_json(lua_State *L) {
   int i, len;
   cJSON *json, *item;
+  const char *name;
 
   switch (lua_type(L, -1)) {
   case LUA_TNIL:
@@ -601,8 +628,8 @@ cJSON *l_write_json(lua_State *L) {
       lua_pushnil(L);
       while (lua_next(L, -2)) {
         item = l_write_json(L);
-        cJSON_AddItemToObject(json, lua_tostring(L, -1), item);
-        lua_pop(L, 1);
+        name = lua_tostring(L, -1);
+        cJSON_AddItemToObject(json, name, item);
       }
     }
     break;
