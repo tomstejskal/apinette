@@ -410,6 +410,14 @@ static int l_api_index(lua_State *L) {
   return 1;
 }
 
+static int l_api_tostring(lua_State *L) {
+  API_api *api = lua_touserdata(L, -1);
+  char *tmp = api_printf("api: %s", api->host);
+  lua_pushstring(L, tmp);
+  free(tmp);
+  return 1;
+}
+
 static int l_auth_gc(lua_State *L) {
   API_auth *auth = lua_touserdata(L, -1);
 
@@ -487,6 +495,9 @@ static int l_api(lua_State *L) {
   lua_rawset(L, -3);
   lua_pushstring(L, "__index");
   lua_pushcfunction(L, l_api_index);
+  lua_rawset(L, -3);
+  lua_pushstring(L, "__tostring");
+  lua_pushcfunction(L, l_api_tostring);
   lua_rawset(L, -3);
   lua_setmetatable(L, -2);
   return 1;
