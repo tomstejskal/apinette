@@ -10,7 +10,7 @@ There is for example only one supported authorization scheme now (basic auth).
 
 ## Planned features
 
-- REPL for interactive usage
+- ~~REPL for interactive usage~~
 - support for other authorization schemes
 - Windows compilation
 - UTL encoding
