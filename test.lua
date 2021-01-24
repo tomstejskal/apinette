@@ -6,15 +6,28 @@ abra = api {
   verbose = false
 }
 
-result = send {
-  abra.get "/firms"
-}
-
-json = from_json(result[1].body);
-
-for i = 1, #json do
-  print(json[i].id, json[i].code, json[i].name)
+function print_firm(firm)
+    print(firm.id, firm.code, firm.name)
 end;
+
+function print_firms(firms)
+  for i = 1, #firms do
+    print_firm(firms[i])
+  end;
+end
+
+print_firms(from_json(send {
+  abra.get "/firms"
+}[1].body))
+
+print_firm(from_json(send {
+  abra.push {
+    path = "/firms",
+    body = to_json({ code = "abc", name = "ABC" })
+  }
+}[1].body))
+
+
 
 --result = send {
   --abra.get "/firms?select=id,code,name&where=code+eq+'foo'",

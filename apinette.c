@@ -566,6 +566,52 @@ void l_read_json(lua_State *L, cJSON *json) {
   }
 }
 
+cJSON *l_write_json(lua_State *L) {
+  int i, len;
+  cJSON *json, *item;
+
+  switch (lua_type(L, -1)) {
+  case LUA_TNIL:
+    json = cJSON_CreateNull();
+    break;
+  case LUA_TBOOLEAN:
+    json = cJSON_CreateBool(lua_toboolean(L, -1));
+    break;
+  case LUA_TNUMBER:
+    json = cJSON_CreateNumber(lua_tonumber(L, -1));
+    break;
+  case LUA_TSTRING:
+    json = cJSON_CreateString(lua_tostring(L, -1));
+    break;
+  case LUA_TTABLE:
+    lua_len(L, -1);
+    len = lua_tointeger(L, -1);
+    lua_pop(L, 1);
+    if (len > 0) {
+      // array
+      json = cJSON_CreateArray();
+      for (i = 1; i <= len; i++) {
+        lua_geti(L, -1, i);
+        item = l_write_json(L);
+        cJSON_AddItemToArray(json, item);
+      }
+    } else {
+      // object
+      json = cJSON_CreateObject();
+      lua_pushnil(L);
+      while (lua_next(L, -2)) {
+        item = l_write_json(L);
+        cJSON_AddItemToObject(json, lua_tostring(L, -1), item);
+        lua_pop(L, 1);
+      }
+    }
+    break;
+  }
+
+  lua_pop(L, 1);
+  return json;
+}
+
 int l_from_json(lua_State *L) {
   cJSON *json;
   const char *tmp;
@@ -590,8 +636,16 @@ int l_from_json(lua_State *L) {
 }
 
 int l_to_json(lua_State *L) {
-  (void)L;
-  return 0;
+  cJSON *json;
+  char *tmp;
+
+  json = l_write_json(L);
+  tmp = cJSON_Print(json);
+  lua_pushstring(L, tmp);
+  free(tmp);
+  cJSON_Delete(json);
+
+  return 1;
 }
 
 void api_init_lua(lua_State *L) {
