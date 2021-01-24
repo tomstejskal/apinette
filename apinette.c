@@ -254,10 +254,12 @@ static int l_request_gc(lua_State *L) {
   free(req->path);
   curl_slist_free_all(req->headers);
   free(req->body);
-  curl_slist_free_all(req->resp->headers);
-  free(req->resp->body);
-  free(req->resp->err);
-  free(req->resp);
+  if (req->resp) {
+    curl_slist_free_all(req->resp->headers);
+    free(req->resp->body);
+    free(req->resp->err);
+    free(req->resp);
+  }
 
   return 0;
 }
@@ -517,20 +519,51 @@ static int l_basic(lua_State *L) {
   lua_setmetatable(L, -2);
   return 1;
 }
+static void l_create_result(lua_State *L, API_request *req) {
+  lua_newtable(L);
+  if (req->resp->err) {
+    lua_pushstring(L, req->resp->err);
+    lua_setfield(L, -2, "err");
+  } else {
+    lua_pushinteger(L, req->resp->status);
+    lua_setfield(L, -2, "status");
+    lua_pushlstring(L, req->resp->body, req->resp->body_len);
+    lua_setfield(L, -2, "body");
+  }
+}
 
-int l_send(lua_State *L) {
+static int l_send(lua_State *L) {
   int i, len;
   API_request *head = NULL, *req;
   char *err = NULL;
+  int single_req = 0;
 
-  lua_len(L, -1);
-  len = lua_tointeger(L, -1);
-  lua_pop(L, 1);
-  for (i = 1; i <= len; i++) {
-    lua_geti(L, -1, i);
-    req = lua_touserdata(L, -1);
+  switch (lua_type(L, -1)) {
+  case LUA_TUSERDATA:
+    lua_getiuservalue(L, -1, 1);
+    if (lua_tointeger(L, -1) != API_TYPE_REQUEST) {
+      lua_pushstring(L, "send: expects request as an argument");
+      lua_error(L);
+    }
     lua_pop(L, 1);
-    DL_APPEND(head, req);
+    head = lua_touserdata(L, -1);
+    single_req = 1;
+    break;
+  case LUA_TTABLE:
+    lua_len(L, -1);
+    len = lua_tointeger(L, -1);
+    lua_pop(L, 1);
+    for (i = 1; i <= len; i++) {
+      lua_geti(L, -1, i);
+      req = lua_touserdata(L, -1);
+      lua_pop(L, 1);
+      DL_APPEND(head, req);
+    }
+    break;
+  default:
+    lua_pushstring(L, "send: expects request or list of requests");
+    lua_error(L);
+    break;
   }
 
   api_send(head, &err);
@@ -540,26 +573,21 @@ int l_send(lua_State *L) {
     lua_error(L);
   }
 
-  lua_newtable(L);
-  i = 1;
-  DL_FOREACH(head, req) {
+  if (single_req) {
+    l_create_result(L, head);
+  } else {
     lua_newtable(L);
-    if (req->resp->err) {
-      lua_pushstring(L, req->resp->err);
-      lua_setfield(L, -2, "err");
-    } else {
-      lua_pushinteger(L, req->resp->status);
-      lua_setfield(L, -2, "status");
-      lua_pushlstring(L, req->resp->body, req->resp->body_len);
-      lua_setfield(L, -2, "body");
+    i = 1;
+    DL_FOREACH(head, req) {
+      l_create_result(L, req);
+      lua_seti(L, -2, i);
+      i++;
     }
-    lua_seti(L, -2, i);
-    i++;
   }
   return 1;
 }
 
-void l_read_json(lua_State *L, cJSON *json) {
+static void l_read_json(lua_State *L, cJSON *json) {
   cJSON *item;
   int i;
 
@@ -592,7 +620,7 @@ void l_read_json(lua_State *L, cJSON *json) {
   }
 }
 
-cJSON *l_write_json(lua_State *L) {
+static cJSON *l_write_json(lua_State *L) {
   int i, len;
   cJSON *json, *item;
   const char *name;
@@ -639,7 +667,7 @@ cJSON *l_write_json(lua_State *L) {
   return json;
 }
 
-int l_from_json(lua_State *L) {
+static int l_from_json(lua_State *L) {
   cJSON *json;
   const char *tmp;
   char *err;
@@ -662,7 +690,7 @@ int l_from_json(lua_State *L) {
   return 1;
 }
 
-int l_to_json(lua_State *L) {
+static int l_to_json(lua_State *L) {
   cJSON *json;
   char *tmp;
 
@@ -673,6 +701,27 @@ int l_to_json(lua_State *L) {
   cJSON_Delete(json);
 
   return 1;
+}
+
+static int l_use(lua_State *L) {
+  int err;
+  char *tmp;
+
+  if (lua_type(L, -1) != LUA_TSTRING) {
+    lua_pushstring(L, "use: expected string as an argument");
+    lua_error(L);
+  }
+
+  err = luaL_loadfile(L, lua_tostring(L, -1));
+  if (err) {
+    tmp = api_printf("%s", lua_tostring(L, -1));
+    lua_pushstring(L, tmp);
+    free(tmp);
+    lua_error(L);
+  }
+
+  lua_call(L, 0, LUA_MULTRET);
+  return lua_gettop(L);
 }
 
 void api_init_lua(lua_State *L) {
@@ -696,4 +745,7 @@ void api_init_lua(lua_State *L) {
 
   // to_json function
   lua_register(L, "to_json", l_to_json);
+
+  // use function
+  lua_register(L, "use", l_use);
 }
