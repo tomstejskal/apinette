@@ -13,8 +13,7 @@
 #include "utstring.h"
 
 #define l_getstringfield(dst, name, table_index, tmp)                          \
-  lua_pushstring(L, (name));                                                   \
-  lua_gettable(L, (table_index));                                              \
+  lua_getfield(L, (table_index), (name));                                      \
   (tmp) = lua_tostring(L, -1);                                                 \
   if ((tmp)) {                                                                 \
     (dst) = malloc(strlen((tmp)) + 1);                                         \
@@ -86,7 +85,8 @@ static void api_add_basic_auth(API_request *req, API_basic_auth *auth) {
   base64 = (char *)base64_encode((const unsigned char *)utstring_body(s),
                                  utstring_len(s), &base64_len);
   utstring_clear(s);
-  utstring_printf(s, "Basic %s", base64);
+  utstring_printf(s, "Basic ");
+  utstring_bincpy(s, base64, base64_len);
 
   api_add_header(req, API_HEADER_AUTHORIZATION, utstring_body(s));
 
@@ -95,11 +95,12 @@ static void api_add_basic_auth(API_request *req, API_basic_auth *auth) {
 }
 
 static void api_add_auth(API_request *req) {
-  switch (req->api->auth_type) {
-  case API_AUTH_NONE:
-    break;
-  case API_AUTH_BASIC:
-    api_add_basic_auth(req, (API_basic_auth *)req->api->auth);
+  if (req->api->auth) {
+    switch (req->api->auth->typ) {
+    case API_AUTH_BASIC:
+      api_add_basic_auth(req, req->api->auth->basic);
+      break;
+    }
   }
 }
 
@@ -126,7 +127,7 @@ static void api_add_request(CURLM *cm, API_request *req, char **err) {
   req->resp = malloc(sizeof(API_response));
   memset(req->resp, 0, sizeof(API_response));
 
-  // curl_easy_setopt(c, CURLOPT_VERBOSE, 1L);
+  curl_easy_setopt(c, CURLOPT_VERBOSE, (long)req->api->verbose);
   curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, api_write_body);
   curl_easy_setopt(c, CURLOPT_WRITEDATA, req);
   utstring_new(url);
@@ -164,7 +165,7 @@ static void api_add_request(CURLM *cm, API_request *req, char **err) {
   curl_multi_add_handle(cm, c);
 }
 
-void api_parallel(API_request *head, char **err) {
+void api_send(API_request *head, char **err) {
   CURLM *cm;
   CURLMsg *msg;
   int running = 1;
@@ -173,7 +174,7 @@ void api_parallel(API_request *head, char **err) {
 
   cm = curl_multi_init();
   if (!cm) {
-    *err = api_printf("Cannot init parallel requests");
+    *err = api_printf("Cannot init transfer");
     return;
   }
 
@@ -259,9 +260,109 @@ static int l_api_get(lua_State *L) {
   api = lua_touserdata(L, lua_upvalueindex(1));
   req->api = api;
   req->method = API_METHOD_GET;
-  tmp = (char *)lua_tostring(L, -2);
-  req->path = malloc(strlen(tmp) + 1);
-  strcpy(req->path, tmp);
+
+  if (lua_istable(L, -2)) {
+    l_getstringfield(req->path, "path", -2, tmp);
+  } else {
+    tmp = (char *)lua_tostring(L, -2);
+    req->path = malloc(strlen(tmp) + 1);
+    strcpy(req->path, tmp);
+  }
+
+  lua_pushinteger(L, API_TYPE_REQUEST);
+  lua_setiuservalue(L, -2, 1);
+
+  lua_newtable(L);
+  lua_pushstring(L, "__gc");
+  lua_pushcfunction(L, l_request_gc);
+  lua_rawset(L, -3);
+  lua_setmetatable(L, -2);
+
+  return 1;
+}
+
+static int l_api_post(lua_State *L) {
+  API_request *req = lua_newuserdatauv(L, sizeof(API_request), 1);
+  API_api *api;
+  const char *tmp;
+
+  memset(req, 0, sizeof(API_request));
+
+  if (!lua_istable(L, -2)) {
+    lua_pushstring(L, "api.post: expected table as argument");
+    lua_error(L);
+  }
+
+  api = lua_touserdata(L, lua_upvalueindex(1));
+  req->api = api;
+  req->method = API_METHOD_POST;
+
+  l_getstringfield(req->path, "path", -2, tmp);
+  l_getstringfield(req->body, "body", -2, tmp);
+  req->body_len = strlen(req->body);
+
+  lua_pushinteger(L, API_TYPE_REQUEST);
+  lua_setiuservalue(L, -2, 1);
+
+  lua_newtable(L);
+  lua_pushstring(L, "__gc");
+  lua_pushcfunction(L, l_request_gc);
+  lua_rawset(L, -3);
+  lua_setmetatable(L, -2);
+
+  return 1;
+}
+
+static int l_api_put(lua_State *L) {
+  API_request *req = lua_newuserdatauv(L, sizeof(API_request), 1);
+  API_api *api;
+  const char *tmp;
+
+  memset(req, 0, sizeof(API_request));
+
+  if (!lua_istable(L, -2)) {
+    lua_pushstring(L, "api.put: expected table as argument");
+    lua_error(L);
+  }
+
+  api = lua_touserdata(L, lua_upvalueindex(1));
+  req->api = api;
+  req->method = API_METHOD_PUT;
+
+  l_getstringfield(req->path, "path", -2, tmp);
+  l_getstringfield(req->body, "body", -2, tmp);
+  req->body_len = strlen(req->body);
+
+  lua_pushinteger(L, API_TYPE_REQUEST);
+  lua_setiuservalue(L, -2, 1);
+
+  lua_newtable(L);
+  lua_pushstring(L, "__gc");
+  lua_pushcfunction(L, l_request_gc);
+  lua_rawset(L, -3);
+  lua_setmetatable(L, -2);
+
+  return 1;
+}
+
+static int l_api_delete(lua_State *L) {
+  API_request *req = lua_newuserdatauv(L, sizeof(API_request), 1);
+  API_api *api;
+  const char *tmp;
+
+  memset(req, 0, sizeof(API_request));
+
+  api = lua_touserdata(L, lua_upvalueindex(1));
+  req->api = api;
+  req->method = API_METHOD_DELETE;
+
+  if (lua_istable(L, -2)) {
+    l_getstringfield(req->path, "path", -2, tmp);
+  } else {
+    tmp = (char *)lua_tostring(L, -2);
+    req->path = malloc(strlen(tmp) + 1);
+    strcpy(req->path, tmp);
+  }
 
   lua_pushinteger(L, API_TYPE_REQUEST);
   lua_setiuservalue(L, -2, 1);
@@ -280,6 +381,15 @@ static int l_api_index(lua_State *L) {
   if (strcmp(field, "get") == 0) {
     lua_pop(L, 1);
     lua_pushcclosure(L, l_api_get, 1); // API_api in a closure
+  } else if (strcmp(field, "post") == 0) {
+    lua_pop(L, 1);
+    lua_pushcclosure(L, l_api_post, 1); // API_api in a closure
+  } else if (strcmp(field, "put") == 0) {
+    lua_pop(L, 1);
+    lua_pushcclosure(L, l_api_put, 1); // API_api in a closure
+  } else if (strcmp(field, "delete") == 0) {
+    lua_pop(L, 1);
+    lua_pushcclosure(L, l_api_delete, 1); // API_api in a closure
   } else {
     lua_pushnil(L);
   }
@@ -290,8 +400,6 @@ static int l_auth_gc(lua_State *L) {
   API_auth *auth = lua_touserdata(L, -1);
 
   switch (auth->typ) {
-  case API_AUTH_NONE:
-    break;
   case API_AUTH_BASIC:
     free(auth->basic->user);
     free(auth->basic->passwd);
@@ -328,8 +436,12 @@ static int l_api(lua_State *L) {
   }
   lua_pop(L, 1);
 
-  l_getstringfield(api->host, "host", -3, s);
-  l_getstringfield(api->path, "path", -3, s);
+  l_getstringfield(api->host, "host", -2, s);
+  l_getstringfield(api->path, "path", -2, s);
+
+  lua_getfield(L, -2, "verbose");
+  api->verbose = lua_toboolean(L, -1);
+  lua_pop(L, 1);
 
   lua_pushstring(L, "auth");
   lua_gettable(L, -3);
@@ -369,8 +481,8 @@ static int l_basic(lua_State *L) {
   auth->typ = API_AUTH_BASIC;
   auth->basic = malloc(sizeof(API_basic_auth));
   memset(auth->basic, 0, sizeof(API_basic_auth));
-  l_getstringfield(auth->basic->user, "user", -3, tmp);
-  l_getstringfield(auth->basic->passwd, "passwd", -3, tmp);
+  l_getstringfield(auth->basic->user, "user", -2, tmp);
+  l_getstringfield(auth->basic->passwd, "password", -2, tmp);
 
   lua_newtable(L);
   lua_pushstring(L, "__gc");
@@ -380,7 +492,7 @@ static int l_basic(lua_State *L) {
   return 1;
 }
 
-int l_parallel(lua_State *L) {
+int l_send(lua_State *L) {
   int i, len;
   API_request *head = NULL, *req;
   char *err = NULL;
@@ -395,14 +507,29 @@ int l_parallel(lua_State *L) {
     DL_APPEND(head, req);
   }
 
-  api_parallel(head, &err);
+  api_send(head, &err);
   if (err) {
     lua_pushstring(L, err);
     free(err);
     lua_error(L);
   }
 
-  lua_pushnil(L);
+  lua_newtable(L);
+  i = 1;
+  DL_FOREACH(head, req) {
+    lua_newtable(L);
+    if (req->resp->err) {
+      lua_pushstring(L, req->resp->err);
+      lua_setfield(L, -2, "err");
+    } else {
+      lua_pushinteger(L, req->resp->status);
+      lua_setfield(L, -2, "status");
+      lua_pushlstring(L, req->resp->body, req->resp->body_len);
+      lua_setfield(L, -2, "body");
+    }
+    lua_seti(L, -2, i);
+    i++;
+  }
   return 1;
 }
 
@@ -419,6 +546,6 @@ void api_init_lua(lua_State *L) {
   // basic function
   lua_register(L, "basic", l_basic);
 
-  // parallel function
-  lua_register(L, "parallel", l_parallel);
+  // send function
+  lua_register(L, "send", l_send);
 }

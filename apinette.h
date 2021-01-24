@@ -27,7 +27,7 @@ typedef enum API_method {
   API_METHOD_DELETE
 } API_method;
 
-typedef enum API_auth_type { API_AUTH_NONE, API_AUTH_BASIC } API_auth_type;
+typedef enum API_auth_type { API_AUTH_BASIC } API_auth_type;
 
 typedef struct API_basic_auth {
   char *user;
@@ -45,8 +45,8 @@ typedef struct API_api {
   API_proto proto;
   char *host;
   char *path;
-  API_auth_type auth_type;
-  void *auth;
+  API_auth *auth;
+  int verbose;
 } API_api;
 
 typedef struct API_response {
@@ -77,7 +77,7 @@ void api_init_lua(lua_State *L);
 
 void api_cleanup(void);
 
-void api_parallel(API_request *head, char **err);
+void api_send(API_request *head, char **err);
 
 API_request *api_new_request(API_api *api, API_method method, char *path);
 

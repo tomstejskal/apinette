@@ -2,26 +2,25 @@ abra = api {
   proto = http,
   host = 'localhost:8081',
   path = '/data',
-  auth = basic { user = 'Supervisor', password = '' }
+  auth = basic { user = 'Supervisor', password = '' },
+  verbose = false
 }
 
-result = parallel {
-  abra.get '/firms',
-  abra.get '/issuedinvoices',
-  abra.get '/receivedinvoices',
-  abra.get '/storecards',
-  abra.get '/storeprices'
+result = send {
+  abra.get "/firms?select=id,code,name&where=code+eq+'foo'",
+  abra.post { path = "/firms?select=id,code,name", body = '{"code":"foo","name":"Foo"}' }, 
+  abra.put { path = "/firms/2800000101?select=id,code,name", body = '{"name":"Bar"}' },
+  abra.delete "/firms/3800000101"
 }
-print(result)
 
---for req, resp in result do 
---  if resp.err then
---    print(resp.err)
---  else
---    print(req.url, ' - status: ', resp.status)
---    if resp.status >= 400 then
---      print(resp.raw_body)
---    end
---  end
---end
+for i = 1, #result do 
+  local resp = result[i]
+  if resp.err then
+    print(resp.err)
+  else
+    print(i .. ' - status: ' .. resp.status)
+    print(resp.body)
+    print()
+  end
+end
 
