@@ -1,4 +1,5 @@
 #include <cjson/cJSON.h>
+#include <ctype.h>
 #include <curl/curl.h>
 #include <lauxlib.h>
 #include <lua.h>
@@ -105,12 +106,25 @@ static void api_add_auth(API_request *req) {
 }
 
 static size_t api_write_body(char *ptr, size_t n, size_t l, API_request *req) {
-  size_t len;
+  size_t len = n * l;
 
-  len = n * l;
   req->resp->body = realloc(req->resp->body, req->resp->body_len + len);
   memcpy(req->resp->body + req->resp->body_len, ptr, len);
   req->resp->body_len += len;
+
+  return len;
+}
+
+static size_t api_write_header(char *buf, size_t l, size_t n,
+                               API_request *req) {
+  size_t len = n * l;
+  char *tmp;
+
+  tmp = malloc(len + 1);
+  memcpy(tmp, buf, len);
+  tmp[len] = 0;
+  req->resp->headers = curl_slist_append(req->resp->headers, tmp);
+  free(tmp);
 
   return len;
 }
@@ -130,6 +144,8 @@ static void api_add_request(CURLM *cm, API_request *req, char **err) {
   curl_easy_setopt(c, CURLOPT_VERBOSE, (long)req->api->verbose);
   curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, api_write_body);
   curl_easy_setopt(c, CURLOPT_WRITEDATA, req);
+  curl_easy_setopt(c, CURLOPT_HEADERFUNCTION, api_write_header);
+  curl_easy_setopt(c, CURLOPT_HEADERDATA, req);
   utstring_new(url);
   utstring_printf(url, "%s://%s%s%s", api_proto_str(req->api->proto),
                   req->api->host, req->api->path, req->path);
@@ -264,19 +280,37 @@ static int l_request_gc(lua_State *L) {
   return 0;
 }
 
-static int l_api_get(lua_State *L) {
+static int l_create_request(lua_State *L, API_method method) {
   API_request *req = lua_newuserdatauv(L, sizeof(API_request), 1);
   API_api *api;
-  const char *tmp;
+  const char *k, *v, *tmp;
+  char *header;
 
   memset(req, 0, sizeof(API_request));
 
   api = lua_touserdata(L, lua_upvalueindex(1));
   req->api = api;
-  req->method = API_METHOD_GET;
+  req->method = method;
 
   if (lua_istable(L, -2)) {
     l_getstringfield(req->path, "path", -2, tmp);
+    l_getstringfield(req->body, "body", -2, tmp);
+    if (req->body) {
+      req->body_len = strlen(req->body);
+    }
+    lua_getfield(L, -2, "headers");
+    if (lua_istable(L, -1)) {
+      lua_pushnil(L);
+      while (lua_next(L, -2)) {
+        k = lua_tostring(L, -2);
+        v = lua_tostring(L, -1);
+        header = api_printf("%s: %s", k, v);
+        req->headers = curl_slist_append(req->headers, header);
+        free(header);
+        lua_pop(L, 1);
+      }
+    }
+    lua_pop(L, 1);
   } else {
     tmp = (char *)lua_tostring(L, -2);
     req->path = malloc(strlen(tmp) + 1);
@@ -293,101 +327,22 @@ static int l_api_get(lua_State *L) {
   lua_setmetatable(L, -2);
 
   return 1;
+}
+
+static int l_api_get(lua_State *L) {
+  return l_create_request(L, API_METHOD_GET);
 }
 
 static int l_api_post(lua_State *L) {
-  API_request *req = lua_newuserdatauv(L, sizeof(API_request), 1);
-  API_api *api;
-  const char *tmp;
-
-  memset(req, 0, sizeof(API_request));
-
-  if (!lua_istable(L, -2)) {
-    lua_pushstring(L, "api.post: expected table as argument");
-    lua_error(L);
-  }
-
-  api = lua_touserdata(L, lua_upvalueindex(1));
-  req->api = api;
-  req->method = API_METHOD_POST;
-
-  l_getstringfield(req->path, "path", -2, tmp);
-  l_getstringfield(req->body, "body", -2, tmp);
-  req->body_len = strlen(req->body);
-
-  lua_pushinteger(L, API_TYPE_REQUEST);
-  lua_setiuservalue(L, -2, 1);
-
-  lua_newtable(L);
-  lua_pushstring(L, "__gc");
-  lua_pushcfunction(L, l_request_gc);
-  lua_rawset(L, -3);
-  lua_setmetatable(L, -2);
-
-  return 1;
+  return l_create_request(L, API_METHOD_POST);
 }
 
 static int l_api_put(lua_State *L) {
-  API_request *req = lua_newuserdatauv(L, sizeof(API_request), 1);
-  API_api *api;
-  const char *tmp;
-
-  memset(req, 0, sizeof(API_request));
-
-  if (!lua_istable(L, -2)) {
-    lua_pushstring(L, "api.put: expected table as argument");
-    lua_error(L);
-  }
-
-  api = lua_touserdata(L, lua_upvalueindex(1));
-  req->api = api;
-  req->method = API_METHOD_PUT;
-
-  l_getstringfield(req->path, "path", -2, tmp);
-  l_getstringfield(req->body, "body", -2, tmp);
-  req->body_len = strlen(req->body);
-
-  lua_pushinteger(L, API_TYPE_REQUEST);
-  lua_setiuservalue(L, -2, 1);
-
-  lua_newtable(L);
-  lua_pushstring(L, "__gc");
-  lua_pushcfunction(L, l_request_gc);
-  lua_rawset(L, -3);
-  lua_setmetatable(L, -2);
-
-  return 1;
+  return l_create_request(L, API_METHOD_PUT);
 }
 
 static int l_api_delete(lua_State *L) {
-  API_request *req = lua_newuserdatauv(L, sizeof(API_request), 1);
-  API_api *api;
-  const char *tmp;
-
-  memset(req, 0, sizeof(API_request));
-
-  api = lua_touserdata(L, lua_upvalueindex(1));
-  req->api = api;
-  req->method = API_METHOD_DELETE;
-
-  if (lua_istable(L, -2)) {
-    l_getstringfield(req->path, "path", -2, tmp);
-  } else {
-    tmp = (char *)lua_tostring(L, -2);
-    req->path = malloc(strlen(tmp) + 1);
-    strcpy(req->path, tmp);
-  }
-
-  lua_pushinteger(L, API_TYPE_REQUEST);
-  lua_setiuservalue(L, -2, 1);
-
-  lua_newtable(L);
-  lua_pushstring(L, "__gc");
-  lua_pushcfunction(L, l_request_gc);
-  lua_rawset(L, -3);
-  lua_setmetatable(L, -2);
-
-  return 1;
+  return l_create_request(L, API_METHOD_DELETE);
 }
 
 static int l_api_index(lua_State *L) {
@@ -412,9 +367,7 @@ static int l_api_index(lua_State *L) {
 
 static int l_api_tostring(lua_State *L) {
   API_api *api = lua_touserdata(L, -1);
-  char *tmp = api_printf("api: %s", api->host);
-  lua_pushstring(L, tmp);
-  free(tmp);
+  lua_pushfstring(L, "api: %s", api->host);
   return 1;
 }
 
@@ -531,6 +484,10 @@ static int l_basic(lua_State *L) {
   return 1;
 }
 static void l_create_result(lua_State *L, API_request *req) {
+  struct curl_slist *header;
+  char *tmp;
+  int i, len;
+
   lua_newtable(L);
   if (req->resp->err) {
     lua_pushstring(L, req->resp->err);
@@ -540,6 +497,22 @@ static void l_create_result(lua_State *L, API_request *req) {
     lua_setfield(L, -2, "status");
     lua_pushlstring(L, req->resp->body, req->resp->body_len);
     lua_setfield(L, -2, "body");
+    lua_newtable(L);
+    for (i = 0, header = req->resp->headers; header;
+         i++, header = header->next) {
+      tmp = strchr(header->data, ':');
+      if (tmp) {
+        lua_pushlstring(L, header->data, tmp - header->data);
+        while (isspace((++tmp)[0]))
+          ;
+        len = strlen(tmp);
+        while ((len > 0) && isspace(tmp[len - 1]))
+          len--;
+        lua_pushlstring(L, tmp, len);
+        lua_settable(L, -3);
+      }
+    }
+    lua_setfield(L, -2, "headers");
   }
 }
 
@@ -681,7 +654,6 @@ static cJSON *l_write_json(lua_State *L) {
 static int l_from_json(lua_State *L) {
   cJSON *json;
   const char *tmp;
-  char *err;
 
   if (lua_type(L, -1) != LUA_TSTRING) {
     lua_pushstring(L, "from_json: expecting string as an argument");
@@ -690,9 +662,7 @@ static int l_from_json(lua_State *L) {
 
   json = cJSON_ParseWithOpts(lua_tostring(L, -1), &tmp, 1);
   if (!json) {
-    err = api_printf("from_json: error in json at '%s'", tmp);
-    lua_pushstring(L, err);
-    free(err);
+    lua_pushfstring(L, "from_json: error in json at '%s'", tmp);
     lua_error(L);
   }
 
@@ -716,7 +686,6 @@ static int l_to_json(lua_State *L) {
 
 static int l_use(lua_State *L) {
   int err;
-  char *tmp;
 
   if (lua_type(L, -1) != LUA_TSTRING) {
     lua_pushstring(L, "use: expected string as an argument");
@@ -725,9 +694,7 @@ static int l_use(lua_State *L) {
 
   err = luaL_loadfile(L, lua_tostring(L, -1));
   if (err) {
-    tmp = api_printf("%s", lua_tostring(L, -1));
-    lua_pushstring(L, tmp);
-    free(tmp);
+    lua_pushfstring(L, "%s", lua_tostring(L, -1));
     lua_error(L);
   }
 

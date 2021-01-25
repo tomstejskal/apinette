@@ -26,7 +26,7 @@ result = send {
   abra.get "/firms?select=id,code,name&where=code+eq+'foo'",
   abra.post { path = "/firms?select=id,code,name", body = '{"code":"foo","name":"Foo"}' }, 
   abra.put { path = "/firms/2800000101?select=id,code,name", body = '{"name":"Bar"}' },
-  abra.delete "/firms/3800000101"
+  abra.delete { path = "/firms/3800000101", headers = { X_foo = "foo" } }
 }
 
 for i = 1, #result do 
@@ -36,6 +36,9 @@ for i = 1, #result do
   else
     print(i .. ' - status: ' .. resp.status)
     print(resp.body)
+    for k, v in pairs(resp.headers) do
+      print(k .. ': ' .. v)
+    end;
     print()
   end
 end
