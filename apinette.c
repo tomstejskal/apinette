@@ -131,7 +131,6 @@ static size_t api_write_header(char *buf, size_t l, size_t n,
 
 static void api_add_request(CURLM *cm, API_request *req, char **err) {
   CURL *c;
-  UT_string *url;
 
   c = curl_easy_init();
   if (!c) {
@@ -146,11 +145,9 @@ static void api_add_request(CURLM *cm, API_request *req, char **err) {
   curl_easy_setopt(c, CURLOPT_WRITEDATA, req);
   curl_easy_setopt(c, CURLOPT_HEADERFUNCTION, api_write_header);
   curl_easy_setopt(c, CURLOPT_HEADERDATA, req);
-  utstring_new(url);
-  utstring_printf(url, "%s://%s%s%s", api_proto_str(req->api->proto),
-                  req->api->host, req->api->path, req->path);
-  curl_easy_setopt(c, CURLOPT_URL, utstring_body(url));
-  utstring_free(url);
+  req->resp->url = api_printf("%s://%s%s%s", api_proto_str(req->api->proto),
+                              req->api->host, req->api->path, req->path);
+  curl_easy_setopt(c, CURLOPT_URL, req->resp->url);
   curl_easy_setopt(c, CURLOPT_PRIVATE, req);
 
   api_add_header(req, API_HEADER_ACCEPT, API_MIME_JSON);
@@ -274,6 +271,7 @@ static int l_request_gc(lua_State *L) {
     curl_slist_free_all(req->resp->headers);
     free(req->resp->body);
     free(req->resp->err);
+    free(req->resp->url);
     free(req->resp);
   }
 
@@ -513,6 +511,8 @@ static void l_create_result(lua_State *L, API_request *req) {
       }
     }
     lua_setfield(L, -2, "headers");
+    lua_pushstring(L, req->resp->url);
+    lua_setfield(L, -2, "url");
   }
 }
 

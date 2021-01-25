@@ -55,6 +55,7 @@ typedef struct API_response {
   char *body;
   size_t body_len;
   char *err;
+  char *url;
 } API_response;
 
 typedef struct API_request {
