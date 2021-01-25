@@ -56,29 +56,17 @@ Create new api endpoint. It expects a table containing these fields:
 - `auth` - authorization object (optional)
 - `verbose` - run in verbose mode (prints details about requests and responses)
 
-It returns and api object, which contains following functions:
+It returns and api object, which contains following functions to create API requests:
+- `get` - returns GET request
+- `post` - returns POST request
+- `put` - returns PUT request
+- `delete` - returns DELETE request
 
-#### {api}.get
-
-Returns new GET request. It expects a string containing url path as its argument, or a table containing following fields:
+Each api function expects a string or a table as an argument.
+String is an URL path, table could have following fields:
 - `path` - url path
-- `headers` - list of strings, each containing a HTTP header (ie. "Accept: application/json")
-
-#### {api}.post
-
-Returns new POST request. It expects a table containing following fields:
-
-- `path` - see {api}.get
-- `headers` - see {api}.get
+- `headers` - table containing HTTP headers (ie. { Accept = 'application/json' })
 - `body` - a string containing the body of POST request
-
-#### {api}.put
-
-Returns new PUT request. It expects a table (see {api}.post)
-
-#### {api}.delete
-
-Returns new DELETE request. For arguments see {api}.get.
 
 ### to_json
 
@@ -96,10 +84,33 @@ It returns a single result table in case of single request object, or a list of 
 
 Result table contains following fields:
 - `status` - HTTP status
-- `headers` - list of header strings
+- `headers` - a table containing HTTP headers (ie. { ['Content-Type'] = 'application/json' })
 - `body` - body of the response or nil
 - `err` - a string containing possible transport error or nil
 
 ### use
 
 Loads a file containing Lua script a run it
+
+## Example
+
+```lua
+example = api {
+  proto = http,
+  host = 'api.example.com'
+  auth = basic { user = 'test', password = 'testpassword' }
+}
+
+result = send(example.get "/")
+body = from_json(result.body)
+for k, v in pairs(body) do
+  print(k .. ': ' .. v)
+end
+
+result = send {
+  example.post { path = "/", body = to_json({ foo = 'bar' }) },
+  example.delete "/foo"
+}
+print(result[1].status)
+print(result[2].status)
+```
