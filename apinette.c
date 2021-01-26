@@ -1,6 +1,6 @@
-#include <cjson/cJSON.h>
 #include <ctype.h>
 #include <curl/curl.h>
+#include <jansson.h>
 #include <lauxlib.h>
 #include <lua.h>
 #include <lualib.h>
@@ -56,7 +56,7 @@ void api_init(char **err) {
 
 void api_cleanup(void) { curl_global_cleanup(); }
 
-static char *api_proto_str(API_proto p) {
+static char *api_proto_str(api_proto p) {
   switch (p) {
   case API_PROTO_HTTP:
     return API_PROTO_HTTP_STR;
@@ -66,7 +66,7 @@ static char *api_proto_str(API_proto p) {
   return NULL;
 }
 
-static char *api_method_str(API_method m) {
+static char *api_method_str(api_method m) {
   switch (m) {
   case API_METHOD_GET:
     return API_METHOD_GET_STR;
@@ -80,7 +80,7 @@ static char *api_method_str(API_method m) {
   return NULL;
 }
 
-static void api_add_header(API_request *req, char *name, char *val) {
+static void api_add_header(api_request_t *req, char *name, char *val) {
   UT_string *s;
 
   utstring_new(s);
@@ -90,7 +90,7 @@ static void api_add_header(API_request *req, char *name, char *val) {
   utstring_free(s);
 }
 
-static void api_add_basic_auth(API_request *req, API_basic_auth *auth) {
+static void api_add_basic_auth(api_request_t *req, api_basic_auth_t *auth) {
   UT_string *s;
   char *base64;
   size_t base64_len;
@@ -109,17 +109,18 @@ static void api_add_basic_auth(API_request *req, API_basic_auth *auth) {
   free(base64);
 }
 
-static void api_add_auth(API_request *req) {
-  if (req->api->auth) {
-    switch (req->api->auth->typ) {
+static void api_add_auth(api_request_t *req) {
+  if (req->endpoint->auth) {
+    switch (req->endpoint->auth->type) {
     case API_AUTH_BASIC:
-      api_add_basic_auth(req, req->api->auth->basic);
+      api_add_basic_auth(req, req->endpoint->auth->basic);
       break;
     }
   }
 }
 
-static size_t api_write_body(char *ptr, size_t n, size_t l, API_request *req) {
+static size_t api_write_body(char *ptr, size_t n, size_t l,
+                             api_request_t *req) {
   size_t len = n * l;
 
   req->resp->body = realloc(req->resp->body, req->resp->body_len + len);
@@ -130,7 +131,7 @@ static size_t api_write_body(char *ptr, size_t n, size_t l, API_request *req) {
 }
 
 static size_t api_write_header(char *buf, size_t l, size_t n,
-                               API_request *req) {
+                               api_request_t *req) {
   size_t len = n * l;
   char *tmp;
 
@@ -143,7 +144,7 @@ static size_t api_write_header(char *buf, size_t l, size_t n,
   return len;
 }
 
-static void api_add_request(CURLM *cm, API_request *req, char **err) {
+static void api_add_request(CURLM *cm, api_request_t *req, char **err) {
   CURL *c;
 
   c = curl_easy_init();
@@ -151,16 +152,17 @@ static void api_add_request(CURLM *cm, API_request *req, char **err) {
     *err = api_printf(*err, "Cannot init request");
   }
 
-  req->resp = malloc(sizeof(API_response));
-  memset(req->resp, 0, sizeof(API_response));
+  req->resp = malloc(sizeof(api_response_t));
+  memset(req->resp, 0, sizeof(api_response_t));
 
-  curl_easy_setopt(c, CURLOPT_VERBOSE, (long)req->api->verbose);
+  curl_easy_setopt(c, CURLOPT_VERBOSE, (long)req->endpoint->verbose);
   curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, api_write_body);
   curl_easy_setopt(c, CURLOPT_WRITEDATA, req);
   curl_easy_setopt(c, CURLOPT_HEADERFUNCTION, api_write_header);
   curl_easy_setopt(c, CURLOPT_HEADERDATA, req);
-  req->resp->url = api_printf("%s://%s%s%s", api_proto_str(req->api->proto),
-                              req->api->host, req->api->path, req->path);
+  req->resp->url =
+      api_printf("%s://%s%s%s", api_proto_str(req->endpoint->proto),
+                 req->endpoint->host, req->endpoint->path, req->path);
   curl_easy_setopt(c, CURLOPT_URL, req->resp->url);
   curl_easy_setopt(c, CURLOPT_PRIVATE, req);
 
@@ -192,12 +194,12 @@ static void api_add_request(CURLM *cm, API_request *req, char **err) {
   curl_multi_add_handle(cm, c);
 }
 
-void api_send(API_request *head, char **err) {
+void api_send(api_request_t *head, char **err) {
   CURLM *cm;
   CURLMsg *msg;
   int running = 1;
   int msgs_left = -1;
-  API_request *req;
+  api_request_t *req;
 
   cm = curl_multi_init();
   if (!cm) {
@@ -217,7 +219,7 @@ void api_send(API_request *head, char **err) {
 
     while ((msg = curl_multi_info_read(cm, &msgs_left))) {
       CURL *c = msg->easy_handle;
-      API_request *req;
+      api_request_t *req;
       curl_easy_getinfo(c, CURLINFO_PRIVATE, &req);
       if (msg->msg == CURLMSG_DONE) {
         long status;
@@ -241,12 +243,13 @@ void api_send(API_request *head, char **err) {
   curl_multi_cleanup(cm);
 }
 
-API_request *api_new_request(API_api *api, API_method method, char *path) {
-  API_request *req;
+api_request_t *api_new_request(api_endpoint_t *endpoint, api_method method,
+                               char *path) {
+  api_request_t *req;
 
-  req = malloc(sizeof(API_request));
-  memset(req, 0, sizeof(API_request));
-  req->api = api;
+  req = malloc(sizeof(api_request_t));
+  memset(req, 0, sizeof(api_request_t));
+  req->endpoint = endpoint;
   req->method = method;
   req->path = path;
 
@@ -254,28 +257,28 @@ API_request *api_new_request(API_api *api, API_method method, char *path) {
 }
 
 static int l_api_gc(lua_State *L) {
-  API_api *api = lua_touserdata(L, -1);
+  api_endpoint_t *endpoint = lua_touserdata(L, -1);
 
-  if (api->auth) {
-    switch (api->auth->typ) {
+  if (endpoint->auth) {
+    switch (endpoint->auth->type) {
     case API_AUTH_BASIC:
-      if (api->auth->basic) {
-        free(api->auth->basic->user);
-        free(api->auth->basic->passwd);
-        free(api->auth->basic);
+      if (endpoint->auth->basic) {
+        free(endpoint->auth->basic->user);
+        free(endpoint->auth->basic->passwd);
+        free(endpoint->auth->basic);
       }
       break;
     }
-    free(api->auth);
+    free(endpoint->auth);
   }
-  free(api->host);
-  free(api->path);
+  free(endpoint->host);
+  free(endpoint->path);
 
   return 0;
 }
 
 static int l_request_gc(lua_State *L) {
-  API_request *req = lua_touserdata(L, -1);
+  api_request_t *req = lua_touserdata(L, -1);
 
   free(req->path);
   curl_slist_free_all(req->headers);
@@ -291,16 +294,16 @@ static int l_request_gc(lua_State *L) {
   return 0;
 }
 
-static int l_create_request(lua_State *L, API_method method) {
-  API_request *req = lua_newuserdatauv(L, sizeof(API_request), 1);
-  API_api *api;
+static int l_create_request(lua_State *L, api_method method) {
+  api_request_t *req = lua_newuserdatauv(L, sizeof(api_request_t), 1);
+  api_endpoint_t *endpoint;
   const char *k, *v, *tmp;
   char *header;
 
-  memset(req, 0, sizeof(API_request));
+  memset(req, 0, sizeof(api_request_t));
 
-  api = lua_touserdata(L, lua_upvalueindex(1));
-  req->api = api;
+  endpoint = lua_touserdata(L, lua_upvalueindex(1));
+  req->endpoint = endpoint;
   req->method = method;
 
   if (lua_istable(L, -2)) {
@@ -360,16 +363,16 @@ static int l_api_index(lua_State *L) {
   const char *field = lua_tostring(L, -1);
   if (strcmp(field, "get") == 0) {
     lua_pop(L, 1);
-    lua_pushcclosure(L, l_api_get, 1); // API_api in a closure
+    lua_pushcclosure(L, l_api_get, 1); // api_endpoint_t in a closure
   } else if (strcmp(field, "post") == 0) {
     lua_pop(L, 1);
-    lua_pushcclosure(L, l_api_post, 1); // API_api in a closure
+    lua_pushcclosure(L, l_api_post, 1); // api_endpoint_t in a closure
   } else if (strcmp(field, "put") == 0) {
     lua_pop(L, 1);
-    lua_pushcclosure(L, l_api_put, 1); // API_api in a closure
+    lua_pushcclosure(L, l_api_put, 1); // api_endpoint_t in a closure
   } else if (strcmp(field, "delete") == 0) {
     lua_pop(L, 1);
-    lua_pushcclosure(L, l_api_delete, 1); // API_api in a closure
+    lua_pushcclosure(L, l_api_delete, 1); // api_endpoint_t in a closure
   } else {
     lua_pushnil(L);
   }
@@ -377,15 +380,15 @@ static int l_api_index(lua_State *L) {
 }
 
 static int l_api_tostring(lua_State *L) {
-  API_api *api = lua_touserdata(L, -1);
+  api_endpoint_t *api = lua_touserdata(L, -1);
   lua_pushfstring(L, "api: %s", api->host);
   return 1;
 }
 
 static int l_auth_gc(lua_State *L) {
-  API_auth *auth = lua_touserdata(L, -1);
+  api_auth_t *auth = lua_touserdata(L, -1);
 
-  switch (auth->typ) {
+  switch (auth->type) {
   case API_AUTH_BASIC:
     if (auth->basic) {
       free(auth->basic->user);
@@ -397,14 +400,14 @@ static int l_auth_gc(lua_State *L) {
   return 0;
 }
 
-static int l_api(lua_State *L) {
-  API_api *api = lua_newuserdatauv(L, sizeof(API_api), 1);
+static int l_endpoint(lua_State *L) {
+  api_endpoint_t *api = lua_newuserdatauv(L, sizeof(api_endpoint_t), 1);
   const char *s;
-  API_auth *auth;
+  api_auth_t *auth;
 
-  memset(api, 0, sizeof(API_api));
+  memset(api, 0, sizeof(api_endpoint_t));
 
-  lua_pushinteger(L, API_TYPE_API);
+  lua_pushinteger(L, API_TYPE_ENDPOINT);
   lua_setiuservalue(L, -2, 1);
 
   if (!lua_istable(L, -2)) {
@@ -441,9 +444,9 @@ static int l_api(lua_State *L) {
       lua_error(L);
     }
     auth = lua_touserdata(L, -2);
-    api->auth = malloc(sizeof(API_auth));
-    api->auth->typ = auth->typ;
-    switch (auth->typ) {
+    api->auth = malloc(sizeof(api_auth_t));
+    api->auth->type = auth->type;
+    switch (auth->type) {
     case API_AUTH_BASIC:
       api->auth->basic = auth->basic;
       auth->basic = NULL;
@@ -468,10 +471,10 @@ static int l_api(lua_State *L) {
 }
 
 static int l_basic(lua_State *L) {
-  API_auth *auth = lua_newuserdatauv(L, sizeof(API_auth), 1);
+  api_auth_t *auth = lua_newuserdatauv(L, sizeof(api_auth_t), 1);
   const char *tmp;
 
-  memset(auth, 0, sizeof(API_auth));
+  memset(auth, 0, sizeof(api_auth_t));
 
   lua_pushinteger(L, API_TYPE_AUTH);
   lua_setiuservalue(L, -2, 1);
@@ -481,9 +484,9 @@ static int l_basic(lua_State *L) {
     lua_error(L);
   }
 
-  auth->typ = API_AUTH_BASIC;
-  auth->basic = malloc(sizeof(API_basic_auth));
-  memset(auth->basic, 0, sizeof(API_basic_auth));
+  auth->type = API_AUTH_BASIC;
+  auth->basic = malloc(sizeof(api_basic_auth_t));
+  memset(auth->basic, 0, sizeof(api_basic_auth_t));
   l_getstringfield(auth->basic->user, "user", -2, tmp);
   l_getstringfield(auth->basic->passwd, "password", -2, tmp);
 
@@ -494,7 +497,7 @@ static int l_basic(lua_State *L) {
   lua_setmetatable(L, -2);
   return 1;
 }
-static void l_create_result(lua_State *L, API_request *req) {
+static void l_create_result(lua_State *L, api_request_t *req) {
   struct curl_slist *header;
   char *tmp;
   int i, len;
@@ -533,7 +536,7 @@ static void l_create_result(lua_State *L, API_request *req) {
 
 static int l_send(lua_State *L) {
   int i, len;
-  API_request *head = NULL, *req;
+  api_request_t *head = NULL, *req;
   char *err = NULL;
   int single_req = 0;
 
@@ -586,56 +589,63 @@ static int l_send(lua_State *L) {
   return 1;
 }
 
-static void l_read_json(lua_State *L, cJSON *json) {
-  cJSON *item;
-  int i;
+static void l_read_json(lua_State *L, json_t *json) {
+  json_t *value;
+  const char *key;
+  size_t i;
 
-  if (cJSON_IsFalse(json)) {
+  if (json_is_false(json)) {
     lua_pushboolean(L, 0);
-  } else if (cJSON_IsTrue(json)) {
+  } else if (json_is_true(json)) {
     lua_pushboolean(L, 1);
-  } else if (cJSON_IsNull(json)) {
+  } else if (json_is_null(json)) {
     lua_pushnil(L);
-  } else if (cJSON_IsNumber(json)) {
-    lua_pushnumber(L, json->valuedouble);
-  } else if (cJSON_IsString(json)) {
-    lua_pushstring(L, json->valuestring);
-  } else if (cJSON_IsArray(json)) {
+  } else if (json_is_integer(json)) {
+    lua_pushinteger(L, json_integer_value(json));
+  } else if (json_is_real(json)) {
+    lua_pushnumber(L, json_real_value(json));
+  } else if (json_is_string(json)) {
+    lua_pushlstring(L, json_string_value(json), json_string_length(json));
+  } else if (json_is_array(json)) {
     lua_newtable(L);
-    i = 1;
-    cJSON_ArrayForEach(item, json) {
-      l_read_json(L, item);
+    json_array_foreach(json, i, value) {
+      l_read_json(L, value);
       lua_seti(L, -2, i);
-      i++;
     }
-  } else if (cJSON_IsObject(json)) {
+  } else if (json_is_object(json)) {
     lua_newtable(L);
-    cJSON_ArrayForEach(item, json) {
-      l_read_json(L, item);
-      lua_setfield(L, -2, item->string);
+    json_object_foreach(json, key, value) {
+      l_read_json(L, value);
+      lua_setfield(L, -2, key);
     }
   } else {
     lua_pushnil(L);
   }
 }
 
-static cJSON *l_write_json(lua_State *L) {
+static json_t *l_write_json(lua_State *L) {
+  json_t *json, *value;
+  const char *s;
+  size_t size;
   int i, len;
-  cJSON *json, *item;
-  const char *name;
 
   switch (lua_type(L, -1)) {
   case LUA_TNIL:
-    json = cJSON_CreateNull();
+    json = json_null();
     break;
   case LUA_TBOOLEAN:
-    json = cJSON_CreateBool(lua_toboolean(L, -1));
+    json = json_boolean(lua_toboolean(L, -1));
     break;
   case LUA_TNUMBER:
-    json = cJSON_CreateNumber(lua_tonumber(L, -1));
+    if (lua_isinteger(L, -1)) {
+      json = json_integer(lua_tointeger(L, -1));
+    } else {
+      json = json_real(lua_tonumber(L, -1));
+    }
     break;
   case LUA_TSTRING:
-    json = cJSON_CreateString(lua_tostring(L, -1));
+    s = lua_tolstring(L, -1, &size);
+    json = json_stringn(s, size);
     break;
   case LUA_TTABLE:
     lua_len(L, -1);
@@ -643,20 +653,20 @@ static cJSON *l_write_json(lua_State *L) {
     lua_pop(L, 1);
     if (len > 0) {
       // array
-      json = cJSON_CreateArray();
+      json = json_array();
       for (i = 1; i <= len; i++) {
         lua_geti(L, -1, i);
-        item = l_write_json(L);
-        cJSON_AddItemToArray(json, item);
+        value = l_write_json(L);
+        json_array_append_new(json, value);
       }
     } else {
       // object
-      json = cJSON_CreateObject();
+      json = json_object();
       lua_pushnil(L);
       while (lua_next(L, -2)) {
-        item = l_write_json(L);
-        name = lua_tostring(L, -1);
-        cJSON_AddItemToObject(json, name, item);
+        value = l_write_json(L);
+        s = lua_tostring(L, -1);
+        json_object_set_new(json, s, value);
       }
     }
     break;
@@ -667,34 +677,38 @@ static cJSON *l_write_json(lua_State *L) {
 }
 
 static int l_from_json(lua_State *L) {
-  cJSON *json;
+  json_t *json;
   const char *tmp;
+  size_t size;
+  json_error_t err;
 
   if (lua_type(L, -1) != LUA_TSTRING) {
     lua_pushstring(L, "from_json: expecting string as an argument");
     lua_error(L);
   }
 
-  json = cJSON_ParseWithOpts(lua_tostring(L, -1), &tmp, 1);
+  tmp = lua_tolstring(L, -1, &size);
+  json = json_loadb(tmp, size, 0, &err);
   if (!json) {
-    lua_pushfstring(L, "from_json: error in json at '%s'", tmp);
+    lua_pushfstring(L, "from_json: %s (line: %d, column: %d)", err.text,
+                    err.line, err.column);
     lua_error(L);
   }
 
   l_read_json(L, json);
-  cJSON_Delete(json);
+  json_decref(json);
   return 1;
 }
 
 static int l_to_json(lua_State *L) {
-  cJSON *json;
+  json_t *json;
   char *tmp;
 
   json = l_write_json(L);
-  tmp = cJSON_Print(json);
+  tmp = json_dumps(json, 0);
   lua_pushstring(L, tmp);
   free(tmp);
-  cJSON_Delete(json);
+  json_decref(json);
 
   return 1;
 }
@@ -706,8 +720,8 @@ void api_init_lua(lua_State *L) {
   // https constant
   l_setglobalstrconst(L, API_PROTO_HTTPS_STR);
 
-  // api function
-  lua_register(L, "api", l_api);
+  // endpoint function
+  lua_register(L, "endpoint", l_endpoint);
 
   // basic function
   lua_register(L, "basic", l_basic);

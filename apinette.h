@@ -17,63 +17,63 @@
 #define API_METHOD_PUT_STR "PUT"
 #define API_METHOD_DELETE_STR "GET"
 
-typedef enum API_userdata_type {
-  API_TYPE_API,
+typedef enum {
+  API_TYPE_ENDPOINT,
   API_TYPE_AUTH,
   API_TYPE_REQUEST
-} API_userdata_type;
+} api_userdata_type;
 
-typedef enum API_proto { API_PROTO_HTTP, API_PROTO_HTTPS } API_proto;
+typedef enum { API_PROTO_HTTP, API_PROTO_HTTPS } api_proto;
 
-typedef enum API_method {
+typedef enum {
   API_METHOD_GET,
   API_METHOD_POST,
   API_METHOD_PUT,
   API_METHOD_DELETE
-} API_method;
+} api_method;
 
-typedef enum API_auth_type { API_AUTH_BASIC } API_auth_type;
+typedef enum { API_AUTH_BASIC } api_auth_type;
 
-typedef struct API_basic_auth {
+typedef struct {
   char *user;
   char *passwd;
-} API_basic_auth;
+} api_basic_auth_t;
 
-typedef struct API_auth {
-  API_auth_type typ;
+typedef struct {
+  api_auth_type type;
   union {
-    API_basic_auth *basic;
+    api_basic_auth_t *basic;
   };
-} API_auth;
+} api_auth_t;
 
-typedef struct API_api {
-  API_proto proto;
+typedef struct {
+  api_proto proto;
   char *host;
   char *path;
-  API_auth *auth;
+  api_auth_t *auth;
   int verbose;
-} API_api;
+} api_endpoint_t;
 
-typedef struct API_response {
+typedef struct {
   int status;
   struct curl_slist *headers;
   char *body;
   size_t body_len;
   char *err;
   char *url;
-} API_response;
+} api_response_t;
 
-typedef struct API_request {
-  API_api *api;
-  API_method method;
+typedef struct api_request_t {
+  api_endpoint_t *endpoint;
+  api_method method;
   char *path;
   struct curl_slist *headers;
   char *body;
   size_t body_len;
-  API_response *resp;
-  struct API_request *prev;
-  struct API_request *next;
-} API_request;
+  api_response_t *resp;
+  struct api_request_t *prev;
+  struct api_request_t *next;
+} api_request_t;
 
 char *api_printf(char *format, ...);
 
@@ -83,8 +83,6 @@ void api_init_lua(lua_State *L);
 
 void api_cleanup(void);
 
-void api_send(API_request *head, char **err);
-
-API_request *api_new_request(API_api *api, API_method method, char *path);
+void api_send(api_request_t *head, char **err);
 
 #endif // APINETTE_H

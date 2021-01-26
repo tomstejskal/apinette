@@ -47,7 +47,7 @@ Appinete expects one argument on the command line, which is the Lua script to ru
 
 ## Lua functions
 
-### api
+### endpoint
 
 Create new api endpoint. It expects a table containing these fields:
 - `proto` - HTTP protocol (strings "http" or "https" or global variables http or https)
@@ -56,13 +56,13 @@ Create new api endpoint. It expects a table containing these fields:
 - `auth` - authorization object (optional)
 - `verbose` - run in verbose mode (prints details about requests and responses)
 
-It returns and api object, which contains following functions to create API requests:
+It returns and endpoint object, which contains following functions to create API requests:
 - `get` - returns GET request
 - `post` - returns POST request
 - `put` - returns PUT request
 - `delete` - returns DELETE request
 
-Each api function expects a string or a table as an argument.
+Each endpoint function expects a string or a table as an argument.
 String is an URL path, table could have following fields:
 - `path` - url path
 - `headers` - table containing HTTP headers (ie. { Accept = 'application/json' })
@@ -92,7 +92,7 @@ Result table contains following fields:
 ## Example
 
 ```lua
-example = api {
+example = endpoint {
   proto = http,
   host = 'api.example.com'
   auth = basic { user = 'test', password = 'testpassword' }
