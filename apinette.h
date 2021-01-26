@@ -12,6 +12,11 @@
 #define API_PROTO_HTTP_STR "http"
 #define API_PROTO_HTTPS_STR "https"
 
+#define API_METHOD_GET_STR "GET"
+#define API_METHOD_POST_STR "POST"
+#define API_METHOD_PUT_STR "PUT"
+#define API_METHOD_DELETE_STR "GET"
+
 typedef enum API_userdata_type {
   API_TYPE_API,
   API_TYPE_AUTH,

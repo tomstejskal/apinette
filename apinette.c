@@ -66,6 +66,20 @@ static char *api_proto_str(API_proto p) {
   return NULL;
 }
 
+static char *api_method_str(API_method m) {
+  switch (m) {
+  case API_METHOD_GET:
+    return API_METHOD_GET_STR;
+  case API_METHOD_POST:
+    return API_METHOD_POST_STR;
+  case API_METHOD_PUT:
+    return API_METHOD_PUT_STR;
+  case API_METHOD_DELETE:
+    return API_METHOD_DELETE_STR;
+  }
+  return NULL;
+}
+
 static void api_add_header(API_request *req, char *name, char *val) {
   UT_string *s;
 
@@ -513,6 +527,8 @@ static void l_create_result(lua_State *L, API_request *req) {
     lua_setfield(L, -2, "headers");
     lua_pushstring(L, req->resp->url);
     lua_setfield(L, -2, "url");
+    lua_pushstring(L, api_method_str(req->method));
+    lua_setfield(L, -2, "method");
   }
 }
 
