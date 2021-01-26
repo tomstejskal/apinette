@@ -13,7 +13,7 @@ There is for example only one supported authorization scheme now (basic auth).
 - ~~REPL for interactive usage~~
 - support for other authorization schemes
 - Windows compilation
-- UTL encoding
+- URL encoding
 
 ## Compilation
 
