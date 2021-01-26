@@ -89,10 +89,6 @@ Result table contains following fields:
 - `err` - a string containing possible transport error or nil
 - `url` - requested URL
 
-### use
-
-Loads a file containing Lua script a run it
-
 ## Example
 
 ```lua

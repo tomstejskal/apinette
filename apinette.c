@@ -232,10 +232,9 @@ void api_send(API_request *head, char **err) {
       } else {
         req->resp->err = api_printf("Unexpected message type: %d", msg->msg);
       }
-
-      if (running) {
-        curl_multi_wait(cm, NULL, 0, 100, NULL);
-      }
+    }
+    if (running) {
+      curl_multi_wait(cm, NULL, 0, 100, NULL);
     }
   }
 
@@ -700,24 +699,6 @@ static int l_to_json(lua_State *L) {
   return 1;
 }
 
-static int l_use(lua_State *L) {
-  int err;
-
-  if (lua_type(L, -1) != LUA_TSTRING) {
-    lua_pushstring(L, "use: expected string as an argument");
-    lua_error(L);
-  }
-
-  err = luaL_loadfile(L, lua_tostring(L, -1));
-  if (err) {
-    lua_pushfstring(L, "%s", lua_tostring(L, -1));
-    lua_error(L);
-  }
-
-  lua_call(L, 0, LUA_MULTRET);
-  return lua_gettop(L);
-}
-
 void api_init_lua(lua_State *L) {
   // http constant
   l_setglobalstrconst(L, API_PROTO_HTTP_STR);
@@ -739,7 +720,4 @@ void api_init_lua(lua_State *L) {
 
   // to_json function
   lua_register(L, "to_json", l_to_json);
-
-  // use function
-  lua_register(L, "use", l_use);
 }
