@@ -15,10 +15,14 @@
 
 #define l_getstringfield(dst, name, table_index, tmp)                          \
   lua_getfield(L, (table_index), (name));                                      \
-  (tmp) = lua_tostring(L, -1);                                                 \
-  if ((tmp)) {                                                                 \
-    (dst) = malloc(strlen((tmp)) + 1);                                         \
-    strcpy((dst), (tmp));                                                      \
+  if (lua_isnil(L, -1)) {                                                      \
+    (dst) = NULL;                                                              \
+  } else {                                                                     \
+    (tmp) = lua_tostring(L, -1);                                               \
+    if ((tmp)) {                                                               \
+      (dst) = malloc(strlen((tmp)) + 1);                                       \
+      strcpy((dst), (tmp));                                                    \
+    }                                                                          \
   }                                                                            \
   lua_pop(L, 1);
 
@@ -160,9 +164,10 @@ static void api_add_request(CURLM *cm, api_request_t *req, char **err) {
   curl_easy_setopt(c, CURLOPT_WRITEDATA, req);
   curl_easy_setopt(c, CURLOPT_HEADERFUNCTION, api_write_header);
   curl_easy_setopt(c, CURLOPT_HEADERDATA, req);
-  req->resp->url =
-      api_printf("%s://%s%s%s", api_proto_str(req->endpoint->proto),
-                 req->endpoint->host, req->endpoint->path, req->path);
+  req->resp->url = api_printf(
+      "%s://%s%s%s", api_proto_str(req->endpoint->proto), req->endpoint->host,
+      req->endpoint->path ? req->endpoint->path : "",
+      req->path ? req->path : "");
   curl_easy_setopt(c, CURLOPT_URL, req->resp->url);
   curl_easy_setopt(c, CURLOPT_PRIVATE, req);
 
@@ -527,11 +532,11 @@ static void l_create_result(lua_State *L, api_request_t *req) {
       }
     }
     lua_setfield(L, -2, "headers");
-    lua_pushstring(L, req->resp->url);
-    lua_setfield(L, -2, "url");
-    lua_pushstring(L, api_method_str(req->method));
-    lua_setfield(L, -2, "method");
   }
+  lua_pushstring(L, req->resp->url);
+  lua_setfield(L, -2, "url");
+  lua_pushstring(L, api_method_str(req->method));
+  lua_setfield(L, -2, "method");
 }
 
 static int l_send(lua_State *L) {
