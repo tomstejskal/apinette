@@ -295,7 +295,7 @@ static int l_request_gc(lua_State *L) {
 }
 
 static int l_create_request(lua_State *L, api_method method) {
-  api_request_t *req = lua_newuserdatauv(L, sizeof(api_request_t), 1);
+  api_request_t *req = lua_newuserdata(L, sizeof(api_request_t));
   api_endpoint_t *endpoint;
   const char *k, *v, *tmp;
   char *header;
@@ -332,7 +332,7 @@ static int l_create_request(lua_State *L, api_method method) {
   }
 
   lua_pushinteger(L, API_TYPE_REQUEST);
-  lua_setiuservalue(L, -2, 1);
+  lua_setuservalue(L, -2);
 
   lua_newtable(L);
   lua_pushstring(L, "__gc");
@@ -401,14 +401,14 @@ static int l_auth_gc(lua_State *L) {
 }
 
 static int l_endpoint(lua_State *L) {
-  api_endpoint_t *api = lua_newuserdatauv(L, sizeof(api_endpoint_t), 1);
+  api_endpoint_t *api = lua_newuserdata(L, sizeof(api_endpoint_t));
   const char *s;
   api_auth_t *auth;
 
   memset(api, 0, sizeof(api_endpoint_t));
 
   lua_pushinteger(L, API_TYPE_ENDPOINT);
-  lua_setiuservalue(L, -2, 1);
+  lua_setuservalue(L, -2);
 
   if (!lua_istable(L, -2)) {
     lua_pushstring(L, "api: expects table as its argument");
@@ -438,7 +438,7 @@ static int l_endpoint(lua_State *L) {
   lua_pushstring(L, "auth");
   lua_gettable(L, -3);
   if (!lua_isnil(L, -1)) {
-    lua_getiuservalue(L, -1, 1);
+    lua_getuservalue(L, -1);
     if (lua_tointeger(L, -1) != API_TYPE_AUTH) {
       lua_pushstring(L, "api: 'auth' is not an auth type");
       lua_error(L);
@@ -471,13 +471,13 @@ static int l_endpoint(lua_State *L) {
 }
 
 static int l_basic(lua_State *L) {
-  api_auth_t *auth = lua_newuserdatauv(L, sizeof(api_auth_t), 1);
+  api_auth_t *auth = lua_newuserdata(L, sizeof(api_auth_t));
   const char *tmp;
 
   memset(auth, 0, sizeof(api_auth_t));
 
   lua_pushinteger(L, API_TYPE_AUTH);
-  lua_setiuservalue(L, -2, 1);
+  lua_setuservalue(L, -2);
 
   if (!lua_istable(L, -2)) {
     lua_pushstring(L, "basic: expects table as its argument");
@@ -517,10 +517,10 @@ static void l_create_result(lua_State *L, api_request_t *req) {
       tmp = strchr(header->data, ':');
       if (tmp) {
         lua_pushlstring(L, header->data, tmp - header->data);
-        while (isspace((++tmp)[0]))
+        while (isspace((int)(++tmp)[0]))
           ;
         len = strlen(tmp);
-        while ((len > 0) && isspace(tmp[len - 1]))
+        while ((len > 0) && isspace((int)tmp[len - 1]))
           len--;
         lua_pushlstring(L, tmp, len);
         lua_settable(L, -3);
@@ -542,7 +542,7 @@ static int l_send(lua_State *L) {
 
   switch (lua_type(L, -1)) {
   case LUA_TUSERDATA:
-    lua_getiuservalue(L, -1, 1);
+    lua_getuservalue(L, -1);
     if (lua_tointeger(L, -1) != API_TYPE_REQUEST) {
       lua_pushstring(L, "send: expects request as an argument");
       lua_error(L);
