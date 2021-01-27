@@ -6,6 +6,7 @@ print_usage() {
   echo "Options:"
   echo "        -h|--help               print this help"
   echo "        -d|--debug              setup debug build"
+  echo "        -s|--sanitize           sanitize build"
   echo "        -b|--build PATH         build path (defult 'build')"
   echo "        -c|--compiler NAME      compiler binary (gcc, clang)"
   echo
@@ -22,7 +23,11 @@ while [ ! -z $1 ]; do
       exit 1
     ;;
     '-d' | '--debug')
-      OPTIONS="$OPTIONS --buildtype=debug -Db_sanitize=address,undefined"
+      OPTIONS="$OPTIONS --buildtype=debug"
+      shift
+    ;;
+    '-s' | '--sanitize')
+      OPTIONS="$OPTIONS -Db_sanitize=address,undefined"
       shift
     ;;
     '-b' | '--build')
