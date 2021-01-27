@@ -87,7 +87,8 @@ Result table contains following fields:
 - `headers` - a table containing HTTP headers (ie. { ['Content-Type'] = 'application/json' })
 - `body` - body of the response or nil
 - `err` - a string containing possible transport error or nil
-- `url` - requested URL
+- `method` - request method
+- `url` - request URL
 
 ## Example
 
