@@ -60,7 +60,7 @@ void api_init(char **err) {
 
 void api_cleanup(void) { curl_global_cleanup(); }
 
-static char *api_proto_str(api_proto p) {
+static char *api_proto_t_str(api_proto_t p) {
   switch (p) {
   case API_PROTO_HTTP:
     return API_PROTO_HTTP_STR;
@@ -70,7 +70,7 @@ static char *api_proto_str(api_proto p) {
   return NULL;
 }
 
-static char *api_method_str(api_method m) {
+static char *api_method_str(api_method_t m) {
   switch (m) {
   case API_METHOD_GET:
     return API_METHOD_GET_STR;
@@ -165,7 +165,7 @@ static void api_add_request(CURLM *cm, api_request_t *req, char **err) {
   curl_easy_setopt(c, CURLOPT_HEADERFUNCTION, api_write_header);
   curl_easy_setopt(c, CURLOPT_HEADERDATA, req);
   req->resp->url = api_printf(
-      "%s://%s%s%s", api_proto_str(req->endpoint->proto), req->endpoint->host,
+      "%s://%s%s%s", api_proto_t_str(req->endpoint->proto), req->endpoint->host,
       req->endpoint->path ? req->endpoint->path : "",
       req->path ? req->path : "");
   curl_easy_setopt(c, CURLOPT_URL, req->resp->url);
@@ -226,6 +226,7 @@ void api_send(api_request_t *head, char **err) {
       CURL *c = msg->easy_handle;
       api_request_t *req;
       curl_easy_getinfo(c, CURLINFO_PRIVATE, &req);
+      curl_easy_getinfo(c, CURLINFO_TOTAL_TIME, &req->resp->total_time);
       if (msg->msg == CURLMSG_DONE) {
         long status;
         curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &status);
@@ -248,7 +249,7 @@ void api_send(api_request_t *head, char **err) {
   curl_multi_cleanup(cm);
 }
 
-api_request_t *api_new_request(api_endpoint_t *endpoint, api_method method,
+api_request_t *api_new_request(api_endpoint_t *endpoint, api_method_t method,
                                char *path) {
   api_request_t *req;
 
@@ -299,7 +300,7 @@ static int l_request_gc(lua_State *L) {
   return 0;
 }
 
-static int l_create_request(lua_State *L, api_method method) {
+static int l_create_request(lua_State *L, api_method_t method) {
   api_request_t *req = lua_newuserdata(L, sizeof(api_request_t));
   api_endpoint_t *endpoint;
   const char *k, *v, *tmp;
@@ -537,6 +538,8 @@ static void l_create_result(lua_State *L, api_request_t *req) {
   lua_setfield(L, -2, "url");
   lua_pushstring(L, api_method_str(req->method));
   lua_setfield(L, -2, "method");
+  lua_pushnumber(L, req->resp->total_time);
+  lua_setfield(L, -2, "total_time");
 }
 
 static int l_send(lua_State *L) {

@@ -23,14 +23,14 @@ typedef enum {
   API_TYPE_REQUEST
 } api_userdata_type;
 
-typedef enum { API_PROTO_HTTP, API_PROTO_HTTPS } api_proto;
+typedef enum { API_PROTO_HTTP, API_PROTO_HTTPS } api_proto_t;
 
 typedef enum {
   API_METHOD_GET,
   API_METHOD_POST,
   API_METHOD_PUT,
   API_METHOD_DELETE
-} api_method;
+} api_method_t;
 
 typedef enum { API_AUTH_BASIC } api_auth_type;
 
@@ -47,7 +47,7 @@ typedef struct {
 } api_auth_t;
 
 typedef struct {
-  api_proto proto;
+  api_proto_t proto;
   char *host;
   char *path;
   api_auth_t *auth;
@@ -61,11 +61,12 @@ typedef struct {
   size_t body_len;
   char *err;
   char *url;
+  double total_time;
 } api_response_t;
 
 typedef struct api_request_t {
   api_endpoint_t *endpoint;
-  api_method method;
+  api_method_t method;
   char *path;
   struct curl_slist *headers;
   char *body;

@@ -89,6 +89,7 @@ Result table contains following fields:
 - `err` - a string containing possible transport error or nil
 - `method` - request method
 - `url` - request URL
+- `total_time` - total time of response in seconds
 
 ## Example
 
