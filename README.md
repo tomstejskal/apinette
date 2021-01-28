@@ -13,7 +13,7 @@ There is for example only one supported authorization scheme now (basic auth).
 - ~~REPL for interactive usage~~
 - support for other authorization schemes
 - Windows compilation
-- URL encoding
+- ~~URL encoding~~
 
 ## Compilation
 
@@ -40,10 +40,11 @@ ninja
 ## Usage
 
 ```
-apinette SCRIPT
+apinette [SCRIPT]
 ```
 
-Appinete expects one argument on the command line, which is the Lua script to run.
+If apinette runs without arguments, it will start a REPL.
+Otherwise it expects one argument on the command line, which is the Lua script to run.
 
 ## Lua functions
 
