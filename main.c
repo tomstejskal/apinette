@@ -41,10 +41,10 @@ int main(int argc, char **argv) {
                 lua_pcall(L, 0, 0, 0);
       if (lua_err) {
         fprintf(stderr, "%s\n", lua_tostring(L, -1));
-        lua_pop(L, 1);
       } else {
-        add_history(buf);
+        lua_pop(L, 1);
       }
+      add_history(buf);
       free(buf);
     }
   } else {

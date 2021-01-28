@@ -68,6 +68,12 @@ String is an URL path, table could have following fields:
 - `headers` - table containing HTTP headers (ie. { Accept = 'application/json' })
 - `body` - a string containing the body of POST request
 
+### basic_auth
+
+It creates an auth object and expects a table containing these fields:
+- `user`
+- `password`
+
 ### to_json
 
 Converts a Lua value into json string.
@@ -91,13 +97,21 @@ Result table contains following fields:
 - `url` - request URL
 - `total_time` - total time of response in seconds
 
+### url_encode
+
+URL encodes its argument.
+
+### url_decode
+
+URL decodes its argument.
+
 ## Example
 
 ```lua
 example = endpoint {
   proto = http,
   host = 'api.example.com'
-  auth = basic { user = 'test', password = 'testpassword' }
+  auth = basic_auth { user = 'test', password = 'testpassword' }
 }
 
 result = send(example.get "/")

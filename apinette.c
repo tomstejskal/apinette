@@ -171,8 +171,6 @@ static void api_add_request(CURLM *cm, api_request_t *req, char **err) {
   curl_easy_setopt(c, CURLOPT_URL, req->resp->url);
   curl_easy_setopt(c, CURLOPT_PRIVATE, req);
 
-  api_add_header(req, API_HEADER_ACCEPT, API_MIME_JSON);
-
   switch (req->method) {
   case API_METHOD_GET:
     break;
@@ -180,14 +178,12 @@ static void api_add_request(CURLM *cm, api_request_t *req, char **err) {
     curl_easy_setopt(c, CURLOPT_POST, 1L);
     curl_easy_setopt(c, CURLOPT_POSTFIELDS, req->body);
     curl_easy_setopt(c, CURLOPT_POSTFIELDSIZE, (long)req->body_len);
-    api_add_header(req, API_HEADER_CONTENT_TYPE, API_MIME_JSON);
     break;
   case API_METHOD_PUT:
     curl_easy_setopt(c, CURLOPT_POST, 1L);
     curl_easy_setopt(c, CURLOPT_POSTFIELDS, req->body);
     curl_easy_setopt(c, CURLOPT_POSTFIELDSIZE, (long)req->body_len);
     curl_easy_setopt(c, CURLOPT_CUSTOMREQUEST, "PUT");
-    api_add_header(req, API_HEADER_CONTENT_TYPE, API_MIME_JSON);
     break;
   case API_METHOD_DELETE:
     curl_easy_setopt(c, CURLOPT_CUSTOMREQUEST, "DELETE");
@@ -476,7 +472,7 @@ static int l_endpoint(lua_State *L) {
   return 1;
 }
 
-static int l_basic(lua_State *L) {
+static int l_basic_auth(lua_State *L) {
   api_auth_t *auth = lua_newuserdata(L, sizeof(api_auth_t));
   const char *tmp;
 
@@ -721,6 +717,53 @@ static int l_to_json(lua_State *L) {
   return 1;
 }
 
+static int l_url_encode(lua_State *L) {
+  const char *tmp;
+  size_t size;
+  CURL *c;
+  char *escaped;
+
+  if (lua_type(L, -1) != LUA_TSTRING) {
+    lua_pushstring(L, "url_encode expects strings argument");
+    lua_error(L);
+  }
+
+  c = curl_easy_init();
+  tmp = lua_tolstring(L, -1, &size);
+  escaped = curl_easy_escape(c, tmp, size);
+  if (escaped) {
+    lua_pushstring(L, escaped);
+  }
+  curl_free(escaped);
+  curl_easy_cleanup(c);
+
+  return 1;
+}
+
+static int l_url_decode(lua_State *L) {
+  const char *tmp;
+  size_t size;
+  CURL *c;
+  char *unescaped;
+  int len;
+
+  if (lua_type(L, -1) != LUA_TSTRING) {
+    lua_pushstring(L, "url_decode expects strings argument");
+    lua_error(L);
+  }
+
+  c = curl_easy_init();
+  tmp = lua_tolstring(L, -1, &size);
+  unescaped = curl_easy_unescape(c, tmp, size, &len);
+  if (unescaped) {
+    lua_pushstring(L, unescaped);
+  }
+  curl_free(unescaped);
+  curl_easy_cleanup(c);
+
+  return 1;
+}
+
 void api_init_lua(lua_State *L) {
   // http constant
   l_setglobalstrconst(L, API_PROTO_HTTP_STR);
@@ -732,7 +775,7 @@ void api_init_lua(lua_State *L) {
   lua_register(L, "endpoint", l_endpoint);
 
   // basic function
-  lua_register(L, "basic", l_basic);
+  lua_register(L, "basic_auth", l_basic_auth);
 
   // send function
   lua_register(L, "send", l_send);
@@ -742,4 +785,10 @@ void api_init_lua(lua_State *L) {
 
   // to_json function
   lua_register(L, "to_json", l_to_json);
+
+  // url_encode function
+  lua_register(L, "url_encode", l_url_encode);
+
+  // url_decode function
+  lua_register(L, "url_decode", l_url_decode);
 }
