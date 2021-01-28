@@ -614,7 +614,7 @@ static void l_read_json(lua_State *L, json_t *json) {
     lua_newtable(L);
     json_array_foreach(json, i, value) {
       l_read_json(L, value);
-      lua_seti(L, -2, i);
+      lua_seti(L, -2, i + 1);
     }
   } else if (json_is_object(json)) {
     lua_newtable(L);
