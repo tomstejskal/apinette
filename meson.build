@@ -5,11 +5,10 @@ project('apinette', 'c',
 curl = dependency('libcurl')
 lua = dependency('lua')
 jansson = dependency('jansson')
-readline = dependency('readline')
 
 exe = executable('apinette',
-  ['main.c', 'apinette.c', 'base64.c'],
+  ['main.c', 'apinette.c', 'base64.c', 'linenoise/linenoise.c'],
   install : true,
-  dependencies : [curl, lua, jansson, readline])
+  dependencies : [curl, lua, jansson])
 
 test('basic', exe)

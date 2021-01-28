@@ -2,8 +2,6 @@
 #include <lauxlib.h>
 #include <lua.h>
 #include <lualib.h>
-#include <readline/history.h>
-#include <readline/readline.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,10 +9,12 @@
 
 #include "apinette.h"
 #include "base64.h"
+#include "linenoise/linenoise.h"
 #include "utlist.h"
 #include "utstring.h"
 
 #define PROGNAME "apinette"
+#define HISTORY_FILE ".history"
 
 int main(int argc, char **argv) {
   char *err = NULL;
@@ -22,7 +22,7 @@ int main(int argc, char **argv) {
   char *script;
   lua_State *L = NULL;
   int lua_err;
-  char *buf;
+  char *line;
 
   if (argc > 2) {
     fprintf(stderr, "Usage: %s SCRIPT\n", argv[0]);
@@ -35,17 +35,19 @@ int main(int argc, char **argv) {
   luaL_openlibs(L);
   api_init_lua(L);
 
+  linenoiseSetMultiLine(1);
+  linenoiseHistoryLoad(HISTORY_FILE);
+
   if (argc == 1) {
-    while ((buf = readline(PROGNAME "> "))) {
-      lua_err = luaL_loadbuffer(L, buf, strlen(buf), "apinette") ||
-                lua_pcall(L, 0, 0, 0);
+    while ((line = linenoise(PROGNAME "> "))) {
+      lua_err = luaL_loadstring(L, line) || lua_pcall(L, 0, 0, 0);
       if (lua_err) {
         fprintf(stderr, "%s\n", lua_tostring(L, -1));
-      } else {
         lua_pop(L, 1);
       }
-      add_history(buf);
-      free(buf);
+      linenoiseHistoryAdd(line);
+      linenoiseHistorySave(HISTORY_FILE);
+      free(line);
     }
   } else {
     script = argv[1];
