@@ -15,6 +15,7 @@
 
 #define PROGNAME "apinette"
 #define HISTORY_FILE ".history"
+#define PRINT_PREFIX "print("
 
 int main(int argc, char **argv) {
   char *err = NULL;
@@ -23,6 +24,7 @@ int main(int argc, char **argv) {
   lua_State *L = NULL;
   int lua_err;
   char *line;
+  char *tmp;
 
   if (argc > 2) {
     fprintf(stderr, "Usage: %s SCRIPT\n", argv[0]);
@@ -40,6 +42,11 @@ int main(int argc, char **argv) {
 
   if (argc == 1) {
     while ((line = linenoise(PROGNAME "> "))) {
+      if (strncmp(line, PRINT_PREFIX, strlen(PRINT_PREFIX)) != 0) {
+        tmp = api_printf(PRINT_PREFIX "%s)", line);
+        free(line);
+        line = tmp;
+      }
       lua_err = luaL_loadstring(L, line) || lua_pcall(L, 0, 0, 0);
       if (lua_err) {
         fprintf(stderr, "%s\n", lua_tostring(L, -1));
