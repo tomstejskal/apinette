@@ -565,104 +565,6 @@ static int api_basic_auth(lua_State *L) {
   lua_setmetatable(L, -2);
   return 1;
 }
-static void api_create_result(lua_State *L, api_request_t *req) {
-  struct curl_slist *header;
-  char *tmp;
-  int i, len;
-
-  lua_newtable(L);
-  if (req->resp->err) {
-    lua_pushstring(L, req->resp->err);
-    lua_setfield(L, -2, "err");
-  } else {
-    lua_pushinteger(L, req->resp->status);
-    lua_setfield(L, -2, "status");
-    lua_pushlstring(L, req->resp->body, req->resp->body_len);
-    if (req->read_func) {
-      luaL_loadbuffer(L, req->read_func, req->read_func_len, "read");
-      lua_rotate(L, -2, 1);
-      lua_call(L, 1, 1);
-    }
-    lua_setfield(L, -2, "body");
-    lua_newtable(L);
-    for (i = 0, header = req->resp->headers; header;
-         i++, header = header->next) {
-      tmp = strchr(header->data, ':');
-      if (tmp) {
-        lua_pushlstring(L, header->data, tmp - header->data);
-        while (isspace((int)(++tmp)[0]))
-          ;
-        len = strlen(tmp);
-        while ((len > 0) && isspace((int)tmp[len - 1]))
-          len--;
-        lua_pushlstring(L, tmp, len);
-        lua_settable(L, -3);
-      }
-    }
-    lua_setfield(L, -2, "headers");
-  }
-  lua_pushstring(L, req->resp->url);
-  lua_setfield(L, -2, "url");
-  lua_pushstring(L, api_method_str(req->method));
-  lua_setfield(L, -2, "method");
-  lua_pushnumber(L, req->resp->total_time);
-  lua_setfield(L, -2, "total_time");
-}
-
-static int api_send(lua_State *L) {
-  int i, len;
-  api_request_t *head = NULL, *req;
-  char *err = NULL;
-  int single_req = 0;
-
-  switch (lua_type(L, -1)) {
-  case LUA_TUSERDATA:
-    lua_getuservalue(L, -1);
-    if (lua_tointeger(L, -1) != API_TYPE_REQUEST) {
-      lua_pushstring(L, "send: expects request as an argument");
-      lua_error(L);
-    }
-    lua_pop(L, 1);
-    head = lua_touserdata(L, -1);
-    single_req = 1;
-    break;
-  case LUA_TTABLE:
-    lua_len(L, -1);
-    len = lua_tointeger(L, -1);
-    lua_pop(L, 1);
-    for (i = 1; i <= len; i++) {
-      lua_geti(L, -1, i);
-      req = lua_touserdata(L, -1);
-      lua_pop(L, 1);
-      DL_APPEND(head, req);
-    }
-    break;
-  default:
-    lua_pushstring(L, "send: expects request or list of requests");
-    lua_error(L);
-    break;
-  }
-
-  api_send_requests(head, &err);
-  if (err) {
-    lua_pushstring(L, err);
-    free(err);
-    lua_error(L);
-  }
-
-  if (single_req) {
-    api_create_result(L, head);
-  } else {
-    lua_newtable(L);
-    i = 1;
-    DL_FOREACH(head, req) {
-      api_create_result(L, req);
-      lua_seti(L, -2, i);
-      i++;
-    }
-  }
-  return 1;
-}
 
 static void api_read_json(lua_State *L, json_t *json) {
   json_t *value;
@@ -770,6 +672,7 @@ static int api_from_json(lua_State *L) {
     lua_error(L);
   }
 
+  lua_pop(L, 1);
   api_read_json(L, json);
   json_decref(json);
   return 1;
@@ -780,6 +683,7 @@ static int api_to_json(lua_State *L) {
   char *tmp;
 
   json = api_write_json(L);
+  lua_pop(L, 1);
   tmp = json_dumps(json, 0);
   lua_pushstring(L, tmp);
   free(tmp);
@@ -808,6 +712,123 @@ static int api_url_encode(lua_State *L) {
   curl_free(escaped);
   curl_easy_cleanup(c);
 
+  return 1;
+}
+static void api_create_result(lua_State *L, api_request_t *req) {
+  struct curl_slist *header;
+  char *tmp, *name, *val, *content_type;
+  int i, len;
+
+  lua_newtable(L);
+  if (req->resp->err) {
+    lua_pushstring(L, req->resp->err);
+    lua_setfield(L, -2, "err");
+  } else {
+    lua_pushinteger(L, req->resp->status);
+    lua_setfield(L, -2, "status");
+    content_type = NULL;
+    lua_newtable(L);
+    for (i = 0, header = req->resp->headers; header;
+         i++, header = header->next) {
+      tmp = strchr(header->data, ':');
+      if (tmp) {
+        len = tmp - header->data;
+        name = malloc(len + 1);
+        memcpy(name, header->data, len);
+        name[len] = 0;
+        lua_pushstring(L, name);
+        while (isspace((int)(++tmp)[0]))
+          ;
+        len = strlen(tmp);
+        while ((len > 0) && isspace((int)tmp[len - 1]))
+          len--;
+        val = malloc(len + 1);
+        memcpy(val, tmp, len);
+        val[len] = 0;
+        lua_pushstring(L, val);
+        lua_settable(L, -3);
+        if (strcasecmp(name, API_HEADER_CONTENT_TYPE) == 0) {
+          content_type = val;
+          val = NULL;
+        }
+        free(name);
+        free(val);
+      }
+    }
+    lua_setfield(L, -2, "headers");
+    lua_pushlstring(L, req->resp->body, req->resp->body_len);
+    if (req->read_func) {
+      luaL_loadbuffer(L, req->read_func, req->read_func_len, "read");
+      lua_rotate(L, -2, 1);
+      lua_call(L, 1, 1);
+    } else if (content_type) {
+      if (strcmp(content_type, API_MIME_JSON) == 0) {
+        api_from_json(L);
+      }
+      free(content_type);
+    }
+    lua_setfield(L, -2, "body");
+  }
+  lua_pushstring(L, req->resp->url);
+  lua_setfield(L, -2, "url");
+  lua_pushstring(L, api_method_str(req->method));
+  lua_setfield(L, -2, "method");
+  lua_pushnumber(L, req->resp->total_time);
+  lua_setfield(L, -2, "total_time");
+}
+
+static int api_send(lua_State *L) {
+  int i, len;
+  api_request_t *head = NULL, *req;
+  char *err = NULL;
+  int single_req = 0;
+
+  switch (lua_type(L, -1)) {
+  case LUA_TUSERDATA:
+    lua_getuservalue(L, -1);
+    if (lua_tointeger(L, -1) != API_TYPE_REQUEST) {
+      lua_pushstring(L, "send: expects request as an argument");
+      lua_error(L);
+    }
+    lua_pop(L, 1);
+    head = lua_touserdata(L, -1);
+    single_req = 1;
+    break;
+  case LUA_TTABLE:
+    lua_len(L, -1);
+    len = lua_tointeger(L, -1);
+    lua_pop(L, 1);
+    for (i = 1; i <= len; i++) {
+      lua_geti(L, -1, i);
+      req = lua_touserdata(L, -1);
+      lua_pop(L, 1);
+      DL_APPEND(head, req);
+    }
+    break;
+  default:
+    lua_pushstring(L, "send: expects request or list of requests");
+    lua_error(L);
+    break;
+  }
+
+  api_send_requests(head, &err);
+  if (err) {
+    lua_pushstring(L, err);
+    free(err);
+    lua_error(L);
+  }
+
+  if (single_req) {
+    api_create_result(L, head);
+  } else {
+    lua_newtable(L);
+    i = 1;
+    DL_FOREACH(head, req) {
+      api_create_result(L, req);
+      lua_seti(L, -2, i);
+      i++;
+    }
+  }
   return 1;
 }
 
