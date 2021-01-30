@@ -347,6 +347,131 @@ static int api_request_gc(lua_State *L) {
   return 0;
 }
 
+static void api_read_json(lua_State *L, json_t *json) {
+  json_t *value;
+  const char *key;
+  size_t i;
+
+  if (json_is_false(json)) {
+    lua_pushboolean(L, 0);
+  } else if (json_is_true(json)) {
+    lua_pushboolean(L, 1);
+  } else if (json_is_null(json)) {
+    lua_pushnil(L);
+  } else if (json_is_integer(json)) {
+    lua_pushinteger(L, json_integer_value(json));
+  } else if (json_is_real(json)) {
+    lua_pushnumber(L, json_real_value(json));
+  } else if (json_is_string(json)) {
+    lua_pushlstring(L, json_string_value(json), json_string_length(json));
+  } else if (json_is_array(json)) {
+    lua_newtable(L);
+    json_array_foreach(json, i, value) {
+      api_read_json(L, value);
+      lua_seti(L, -2, i + 1);
+    }
+  } else if (json_is_object(json)) {
+    lua_newtable(L);
+    json_object_foreach(json, key, value) {
+      api_read_json(L, value);
+      lua_setfield(L, -2, key);
+    }
+  } else {
+    lua_pushnil(L);
+  }
+}
+
+static json_t *api_write_json(lua_State *L) {
+  json_t *json, *value;
+  const char *s;
+  size_t size;
+  int i, len;
+
+  switch (lua_type(L, -1)) {
+  case LUA_TNIL:
+    json = json_null();
+    break;
+  case LUA_TBOOLEAN:
+    json = json_boolean(lua_toboolean(L, -1));
+    break;
+  case LUA_TNUMBER:
+    if (lua_isinteger(L, -1)) {
+      json = json_integer(lua_tointeger(L, -1));
+    } else {
+      json = json_real(lua_tonumber(L, -1));
+    }
+    break;
+  case LUA_TSTRING:
+    s = lua_tolstring(L, -1, &size);
+    json = json_stringn(s, size);
+    break;
+  case LUA_TTABLE:
+    lua_len(L, -1);
+    len = lua_tointeger(L, -1);
+    lua_pop(L, 1);
+    if (len > 0) {
+      // array
+      json = json_array();
+      for (i = 1; i <= len; i++) {
+        lua_geti(L, -1, i);
+        value = api_write_json(L);
+        json_array_append_new(json, value);
+      }
+    } else {
+      // object
+      json = json_object();
+      lua_pushnil(L);
+      while (lua_next(L, -2)) {
+        value = api_write_json(L);
+        s = lua_tostring(L, -1);
+        json_object_set_new(json, s, value);
+      }
+    }
+    break;
+  }
+
+  lua_pop(L, 1);
+  return json;
+}
+
+static int api_from_json(lua_State *L) {
+  json_t *json;
+  const char *tmp;
+  size_t size;
+  json_error_t err;
+
+  if (lua_type(L, -1) != LUA_TSTRING) {
+    lua_pushstring(L, "from_json: expecting string as an argument");
+    lua_error(L);
+  }
+
+  tmp = lua_tolstring(L, -1, &size);
+  json = json_loadb(tmp, size, 0, &err);
+  if (!json) {
+    lua_pushfstring(L, "from_json: %s (line: %d, column: %d)", err.text,
+                    err.line, err.column);
+    lua_error(L);
+  }
+
+  lua_pop(L, 1);
+  api_read_json(L, json);
+  json_decref(json);
+  return 1;
+}
+
+static int api_to_json(lua_State *L) {
+  json_t *json;
+  char *tmp;
+
+  json = api_write_json(L);
+  tmp = json_dumps(json, 0);
+  lua_pushstring(L, tmp);
+  free(tmp);
+  json_decref(json);
+
+  return 1;
+}
+
 static int api_write_func(lua_State *L, const void *p, size_t sz, void *ud) {
   api_request_t *req = (api_request_t *)ud;
   (void)L;
@@ -362,6 +487,7 @@ static int api_create_request(lua_State *L, api_method_t method) {
   api_endpoint_t *endpoint;
   const char *k, *v, *tmp;
   char *header;
+  size_t sz;
 
   memset(req, 0, sizeof(api_request_t));
 
@@ -371,10 +497,20 @@ static int api_create_request(lua_State *L, api_method_t method) {
 
   if (lua_istable(L, -2)) {
     api_getstringfield(L, req->path, "path", -2, tmp);
-    api_getstringfield(L, req->body, "body", -2, tmp);
-    if (req->body) {
-      req->body_len = strlen(req->body);
+    lua_getfield(L, -2, "body");
+    if (!lua_isnil(L, -1)) {
+      if (lua_istable(L, -1)) {
+        api_to_json(L);
+        header = api_printf("%s: %s", API_HEADER_CONTENT_TYPE, API_MIME_JSON);
+        req->headers = curl_slist_append(req->headers, header);
+        free(header);
+      }
+      tmp = lua_tolstring(L, -1, &sz);
+      req->body = malloc(sz);
+      memcpy(req->body, tmp, sz);
+      req->body_len = sz;
     }
+    lua_pop(L, 1);
     lua_getfield(L, -2, "headers");
     if (lua_istable(L, -1)) {
       lua_pushnil(L);
@@ -563,132 +699,6 @@ static int api_basic_auth(lua_State *L) {
   lua_pushcfunction(L, api_auth_gc);
   lua_rawset(L, -3);
   lua_setmetatable(L, -2);
-  return 1;
-}
-
-static void api_read_json(lua_State *L, json_t *json) {
-  json_t *value;
-  const char *key;
-  size_t i;
-
-  if (json_is_false(json)) {
-    lua_pushboolean(L, 0);
-  } else if (json_is_true(json)) {
-    lua_pushboolean(L, 1);
-  } else if (json_is_null(json)) {
-    lua_pushnil(L);
-  } else if (json_is_integer(json)) {
-    lua_pushinteger(L, json_integer_value(json));
-  } else if (json_is_real(json)) {
-    lua_pushnumber(L, json_real_value(json));
-  } else if (json_is_string(json)) {
-    lua_pushlstring(L, json_string_value(json), json_string_length(json));
-  } else if (json_is_array(json)) {
-    lua_newtable(L);
-    json_array_foreach(json, i, value) {
-      api_read_json(L, value);
-      lua_seti(L, -2, i + 1);
-    }
-  } else if (json_is_object(json)) {
-    lua_newtable(L);
-    json_object_foreach(json, key, value) {
-      api_read_json(L, value);
-      lua_setfield(L, -2, key);
-    }
-  } else {
-    lua_pushnil(L);
-  }
-}
-
-static json_t *api_write_json(lua_State *L) {
-  json_t *json, *value;
-  const char *s;
-  size_t size;
-  int i, len;
-
-  switch (lua_type(L, -1)) {
-  case LUA_TNIL:
-    json = json_null();
-    break;
-  case LUA_TBOOLEAN:
-    json = json_boolean(lua_toboolean(L, -1));
-    break;
-  case LUA_TNUMBER:
-    if (lua_isinteger(L, -1)) {
-      json = json_integer(lua_tointeger(L, -1));
-    } else {
-      json = json_real(lua_tonumber(L, -1));
-    }
-    break;
-  case LUA_TSTRING:
-    s = lua_tolstring(L, -1, &size);
-    json = json_stringn(s, size);
-    break;
-  case LUA_TTABLE:
-    lua_len(L, -1);
-    len = lua_tointeger(L, -1);
-    lua_pop(L, 1);
-    if (len > 0) {
-      // array
-      json = json_array();
-      for (i = 1; i <= len; i++) {
-        lua_geti(L, -1, i);
-        value = api_write_json(L);
-        json_array_append_new(json, value);
-      }
-    } else {
-      // object
-      json = json_object();
-      lua_pushnil(L);
-      while (lua_next(L, -2)) {
-        value = api_write_json(L);
-        s = lua_tostring(L, -1);
-        json_object_set_new(json, s, value);
-      }
-    }
-    break;
-  }
-
-  lua_pop(L, 1);
-  return json;
-}
-
-static int api_from_json(lua_State *L) {
-  json_t *json;
-  const char *tmp;
-  size_t size;
-  json_error_t err;
-
-  if (lua_type(L, -1) != LUA_TSTRING) {
-    lua_pushstring(L, "from_json: expecting string as an argument");
-    lua_error(L);
-  }
-
-  tmp = lua_tolstring(L, -1, &size);
-  json = json_loadb(tmp, size, 0, &err);
-  if (!json) {
-    lua_pushfstring(L, "from_json: %s (line: %d, column: %d)", err.text,
-                    err.line, err.column);
-    lua_error(L);
-  }
-
-  lua_pop(L, 1);
-  api_read_json(L, json);
-  json_decref(json);
-  return 1;
-}
-
-static int api_to_json(lua_State *L) {
-  json_t *json;
-  char *tmp;
-
-  json = api_write_json(L);
-  lua_pop(L, 1);
-  tmp = json_dumps(json, 0);
-  lua_pushstring(L, tmp);
-  free(tmp);
-  json_decref(json);
-
   return 1;
 }
 

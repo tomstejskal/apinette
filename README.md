@@ -67,7 +67,11 @@ Each endpoint function expects a string or a table as an argument.
 String is an URL path, table could have following fields:
 - `path` - url path
 - `headers` - table containing HTTP headers (ie. { Accept = 'application/json' })
-- `body` - a string containing the body of POST request
+- `body` - a string a table containing the body of POST request
+
+If body is table, then it is encoded as json object and HTTP header Content-Type
+is set to 'application/json'. If the supplied headers also contain Content-Type header,
+it will override the implicit value.
 
 ### basic_auth
 
@@ -78,10 +82,14 @@ It creates an auth object and expects a table containing these fields:
 ### to_json
 
 Converts a Lua value into json string.
+Conversion of table to json is implicit, you don't need to call this function
+to write request body.
 
 ### from_json
 
 Converts a json string into a Lua value.
+Conversion of json to table is implicit, you don't need to call this function
+to parse response body.
 
 ### send
 
@@ -92,11 +100,14 @@ It returns a single result table in case of single request object, or a list of 
 Result table contains following fields:
 - `status` - HTTP status
 - `headers` - a table containing HTTP headers (ie. { ['Content-Type'] = 'application/json' })
-- `body` - body of the response or nil
+- `body` - string or table containing the body of the response
 - `err` - a string containing possible transport error or nil
 - `method` - request method
 - `url` - request URL
 - `total_time` - total time of response in seconds
+
+If response contains Content-Type header with value 'application/json', then body
+is table decoded from json string.
 
 ### url_encode
 
@@ -116,13 +127,14 @@ example = endpoint {
 }
 
 result = send(example.get "/")
-body = from_json(result.body)
-for k, v in pairs(body) do
+// result.body is table (created from json)
+for k, v in pairs(result.body) do
   print(k .. ': ' .. v)
 end
 
+// automatically converts body as table into json
 result = send {
-  example.post { path = "/", body = to_json({ foo = 'bar' }) },
+  example.post { path = "/", body = { foo = 'bar' } },
   example.delete "/foo"
 }
 print(result[1].status)
