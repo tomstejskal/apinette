@@ -15,7 +15,7 @@
 #include "utstring.h"
 
 #define PROGNAME "apinette"
-#define HISTORY_FILE ".history"
+#define HISTORY_FILE ".apinette_history"
 
 int main(int argc, char **argv) {
   char *err = NULL;
@@ -39,10 +39,9 @@ int main(int argc, char **argv) {
 
   L = api_init(&err);
 
-  linenoiseSetMultiLine(1);
-  linenoiseHistoryLoad(HISTORY_FILE);
-
   if (argc == 1) {
+    linenoiseSetMultiLine(1);
+    linenoiseHistoryLoad(HISTORY_FILE);
     while ((line = linenoise(PROGNAME "> "))) {
       tmp = NULL;
       brk = strpbrk(line, " \t\r\n({");
@@ -85,7 +84,7 @@ int main(int argc, char **argv) {
       lua_getfield(L, -1, "path");
       path = lua_tostring(L, -1);
       lua_pop(L, 1);
-      lua_pushfstring(L, "%s;%s/?/?.lua", path, dir);
+      lua_pushfstring(L, "%s;%s/?.lua", path, dir);
       lua_setfield(L, -2, "path");
     }
     free(tmp);

@@ -767,15 +767,16 @@ static void api_create_result(lua_State *L, api_request_t *req) {
     }
     lua_setfield(L, -2, "headers");
     lua_pushlstring(L, req->resp->body, req->resp->body_len);
-    if (req->read_func) {
-      luaL_loadbuffer(L, req->read_func, req->read_func_len, "read");
-      lua_rotate(L, -2, 1);
-      lua_call(L, 1, 1);
-    } else if (content_type) {
+    if (content_type) {
       if (strcmp(content_type, API_MIME_JSON) == 0) {
         api_from_json(L);
       }
       free(content_type);
+    }
+    if (req->read_func) {
+      luaL_loadbuffer(L, req->read_func, req->read_func_len, "read");
+      lua_rotate(L, -2, 1);
+      lua_call(L, 1, 1);
     }
     lua_setfield(L, -2, "body");
   }
