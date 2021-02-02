@@ -498,7 +498,8 @@ static int api_create_request(lua_State *L, api_method_t method) {
   req->endpoint = endpoint;
   req->method = method;
 
-  if (lua_istable(L, -2)) {
+  switch (lua_type(L, -2)) {
+  case LUA_TTABLE:
     api_getstringfield(L, req->path, "path", -2, tmp);
     lua_getfield(L, -2, "body");
     if (!lua_isnil(L, -1)) {
@@ -532,10 +533,15 @@ static int api_create_request(lua_State *L, api_method_t method) {
       lua_dump(L, api_request_handle_response_chunk_cb, req, 0);
     }
     lua_pop(L, 1);
-  } else {
+    break;
+  case LUA_TSTRING:
     tmp = (char *)lua_tostring(L, -2);
     req->path = malloc(strlen(tmp) + 1);
     strcpy(req->path, tmp);
+    break;
+  default:
+    lua_pushstring(L, "request function parameter should be string or table");
+    lua_error(L);
   }
 
   lua_pushinteger(L, API_TYPE_REQUEST);
