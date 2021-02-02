@@ -11,4 +11,10 @@ exe = executable('apinette',
   install : true,
   dependencies : [curl, lua, jansson])
 
+microhttpd = dependency('libmicrohttpd')
+
+test_server = executable('test_server',
+  ['test_server.c'],
+  dependencies : [jansson, microhttpd])
+
 test('basic', exe)

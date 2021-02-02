@@ -56,6 +56,8 @@ Create new api endpoint. It expects a table containing these fields:
 - `path` - basic url path (optional)
 - `auth` - authorization object (optional)
 - `verbose` - run in verbose mode (prints details about requests and responses)
+- `handle_response' - a function, which receives each response table and returns nothing
+                      (ie. to log responses, to handle error status codes)
 
 It returns and endpoint object, which contains following functions to create API requests:
 - `get` - returns GET request
@@ -68,6 +70,8 @@ String is an URL path, table could have following fields:
 - `path` - url path
 - `headers` - table containing HTTP headers (ie. { Accept = 'application/json' })
 - `body` - a string a table containing the body of POST request
+- `handle_response` - a function, which receives the response and returns nothing
+                      (ie. to convert response body)
 
 If body is table, then it is encoded as json object and HTTP header Content-Type
 is set to 'application/json'. If the supplied headers also contain Content-Type header,
