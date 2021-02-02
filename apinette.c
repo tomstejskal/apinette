@@ -795,12 +795,6 @@ static void api_create_result(lua_State *L, api_request_t *req) {
       }
       free(content_type);
     }
-    if (req->handle_response_chunk) {
-      luaL_loadbuffer(L, req->handle_response_chunk,
-                      req->handle_response_chunk_len, "handle_response");
-      lua_rotate(L, -2, 1);
-      lua_call(L, 1, 1);
-    }
     lua_setfield(L, -2, "body");
   }
   lua_pushstring(L, req->resp->url);
@@ -814,6 +808,13 @@ static void api_create_result(lua_State *L, api_request_t *req) {
     lua_pushvalue(L, -1);
     luaL_loadbuffer(L, ep->handle_response_chunk, ep->handle_response_chunk_len,
                     "handle_response");
+    lua_rotate(L, -2, 1);
+    lua_call(L, 1, 0);
+  }
+  if (req->handle_response_chunk) {
+    lua_pushvalue(L, -1);
+    luaL_loadbuffer(L, req->handle_response_chunk,
+                    req->handle_response_chunk_len, "handle_response");
     lua_rotate(L, -2, 1);
     lua_call(L, 1, 0);
   }
