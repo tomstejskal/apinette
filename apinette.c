@@ -42,7 +42,7 @@
 
 #define api_setglobalstrconst(L, s)                                            \
   lua_pushstring((L), (s));                                                    \
-  lua_setglobal((L), API_PROTO_HTTP_STR);
+  lua_setglobal((L), (s));
 
 typedef enum {
   API_TYPE_ENDPOINT,
@@ -56,7 +56,8 @@ typedef enum {
   API_METHOD_GET,
   API_METHOD_POST,
   API_METHOD_PUT,
-  API_METHOD_DELETE
+  API_METHOD_DELETE,
+  API_METHOD_CUSTOM
 } api_method_t;
 
 typedef enum { API_AUTH_BASIC } api_auth_type;
@@ -96,6 +97,7 @@ typedef struct {
 typedef struct api_request_t {
   api_endpoint_t *endpoint;
   api_method_t method;
+  char *custom_method;
   char *path;
   struct curl_slist *headers;
   char *body;
@@ -135,8 +137,8 @@ static char *api_proto_t_str(api_proto_t p) {
   return NULL;
 }
 
-static char *api_method_str(api_method_t m) {
-  switch (m) {
+static char *api_method_str(api_request_t *req) {
+  switch (req->method) {
   case API_METHOD_GET:
     return API_METHOD_GET_STR;
   case API_METHOD_POST:
@@ -145,6 +147,8 @@ static char *api_method_str(api_method_t m) {
     return API_METHOD_PUT_STR;
   case API_METHOD_DELETE:
     return API_METHOD_DELETE_STR;
+  case API_METHOD_CUSTOM:
+    return req->custom_method;
   }
   return NULL;
 }
@@ -252,6 +256,14 @@ static void api_add_request(CURLM *cm, api_request_t *req, char **err) {
   case API_METHOD_DELETE:
     curl_easy_setopt(c, CURLOPT_CUSTOMREQUEST, "DELETE");
     break;
+  case API_METHOD_CUSTOM:
+    if (req->body) {
+      curl_easy_setopt(c, CURLOPT_POST, 1L);
+      curl_easy_setopt(c, CURLOPT_POSTFIELDS, req->body);
+      curl_easy_setopt(c, CURLOPT_POSTFIELDSIZE, (long)req->body_len);
+    }
+    curl_easy_setopt(c, CURLOPT_CUSTOMREQUEST, req->custom_method);
+    break;
   }
 
   api_add_auth(req);
@@ -334,6 +346,7 @@ static int api_endpoint_gc(lua_State *L) {
 static int api_request_gc(lua_State *L) {
   api_request_t *req = lua_touserdata(L, -1);
 
+  free(req->custom_method);
   free(req->path);
   curl_slist_free_all(req->headers);
   free(req->body);
@@ -485,7 +498,8 @@ static int api_request_handle_response_chunk_cb(lua_State *L, const void *p,
   return 0;
 }
 
-static int api_create_request(lua_State *L, api_method_t method) {
+static int api_create_request(lua_State *L, api_method_t method,
+                              char *custom_method) {
   api_request_t *req = lua_newuserdata(L, sizeof(api_request_t));
   api_endpoint_t *endpoint;
   const char *k, *v, *tmp;
@@ -497,9 +511,13 @@ static int api_create_request(lua_State *L, api_method_t method) {
   endpoint = lua_touserdata(L, lua_upvalueindex(1));
   req->endpoint = endpoint;
   req->method = method;
+  req->custom_method = custom_method;
 
   switch (lua_type(L, -2)) {
   case LUA_TTABLE:
+    if (method == API_METHOD_CUSTOM) {
+      api_getstringfield(L, req->custom_method, "method", -2, tmp);
+    }
     api_getstringfield(L, req->path, "path", -2, tmp);
     lua_getfield(L, -2, "body");
     if (!lua_isnil(L, -1)) {
@@ -544,6 +562,11 @@ static int api_create_request(lua_State *L, api_method_t method) {
     lua_error(L);
   }
 
+  if (!req->method) {
+    /* default method */
+    req->method = API_METHOD_GET;
+  }
+
   lua_pushinteger(L, API_TYPE_REQUEST);
   lua_setuservalue(L, -2);
 
@@ -556,20 +579,24 @@ static int api_create_request(lua_State *L, api_method_t method) {
   return 1;
 }
 
+static int api_endpoint_request(lua_State *L) {
+  return api_create_request(L, API_METHOD_CUSTOM, NULL);
+}
+
 static int api_endpoint_get(lua_State *L) {
-  return api_create_request(L, API_METHOD_GET);
+  return api_create_request(L, API_METHOD_GET, NULL);
 }
 
 static int api_endpoint_post(lua_State *L) {
-  return api_create_request(L, API_METHOD_POST);
+  return api_create_request(L, API_METHOD_POST, NULL);
 }
 
 static int api_endpoint_put(lua_State *L) {
-  return api_create_request(L, API_METHOD_PUT);
+  return api_create_request(L, API_METHOD_PUT, NULL);
 }
 
 static int api_endpoint_delete(lua_State *L) {
-  return api_create_request(L, API_METHOD_DELETE);
+  return api_create_request(L, API_METHOD_DELETE, NULL);
 }
 
 static int api_endpoint_index(lua_State *L) {
@@ -586,6 +613,9 @@ static int api_endpoint_index(lua_State *L) {
   } else if (strcmp(field, "delete") == 0) {
     lua_pop(L, 1);
     lua_pushcclosure(L, api_endpoint_delete, 1); // api_endpoint_t in a closure
+  } else if (strcmp(field, "request") == 0) {
+    lua_pop(L, 1);
+    lua_pushcclosure(L, api_endpoint_request, 1); // api_endpoint_t in a closure
   } else {
     lua_pushnil(L);
   }
@@ -805,7 +835,7 @@ static void api_create_result(lua_State *L, api_request_t *req) {
   }
   lua_pushstring(L, req->resp->url);
   lua_setfield(L, -2, "url");
-  lua_pushstring(L, api_method_str(req->method));
+  lua_pushstring(L, api_method_str(req));
   lua_setfield(L, -2, "method");
   lua_pushnumber(L, req->resp->total_time);
   lua_setfield(L, -2, "total_time");
@@ -923,6 +953,18 @@ lua_State *api_init(char **err) {
 
   // https constant
   api_setglobalstrconst(L, API_PROTO_HTTPS_STR);
+
+  // GET constant
+  api_setglobalstrconst(L, API_METHOD_GET_STR);
+
+  // POST constant
+  api_setglobalstrconst(L, API_METHOD_POST_STR);
+
+  // PUT constant
+  api_setglobalstrconst(L, API_METHOD_PUT_STR);
+
+  // DELETE constant
+  api_setglobalstrconst(L, API_METHOD_DELETE_STR);
 
   // endpoint function
   lua_register(L, "endpoint", api_endpoint);

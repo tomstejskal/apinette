@@ -64,6 +64,7 @@ It returns and endpoint object, which contains following functions to create API
 - `post` - returns POST request
 - `put` - returns PUT request
 - `delete` - returns DELETE request
+- `request` - returns a custom request, see bellow
 
 Each endpoint function expects a string or a table as an argument.
 String is an URL path, table could have following fields:
@@ -72,6 +73,8 @@ String is an URL path, table could have following fields:
 - `body` - a string a table containing the body of POST request
 - `handle_response` - a function, which receives the response and returns nothing
                       (ie. to convert response body)
+- `method` - a HTTP method of custom request (there are defined global variables
+             GET, POST, PUT and DELETE, which contain respective HTTP method strings)
 
 If body is table, then it is encoded as json object and HTTP header Content-Type
 is set to 'application/json'. If the supplied headers also contain Content-Type header,
