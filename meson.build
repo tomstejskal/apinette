@@ -3,7 +3,7 @@ project('apinette', 'c',
   default_options : ['warning_level=3'])
 
 curl = dependency('libcurl')
-lua = dependency('lua')
+lua = dependency('lua53')
 jansson = dependency('jansson')
 
 exe = executable('apinette',
