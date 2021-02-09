@@ -880,6 +880,10 @@ static int api_send(lua_State *L) {
     for (i = 1; i <= len; i++) {
       lua_geti(L, -1, i);
       req = lua_touserdata(L, -1);
+      if (!req) {
+        lua_pushfstring(L, "send: expects list of requests as an argument");
+        lua_error(L);
+      }
       lua_pop(L, 1);
       DL_APPEND(head, req);
     }
