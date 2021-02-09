@@ -456,16 +456,14 @@ static int api_from_json(lua_State *L) {
   json_error_t err;
 
   if (lua_type(L, -1) != LUA_TSTRING) {
-    lua_pushstring(L, "from_json: expecting string as an argument");
-    lua_error(L);
+    return luaL_error(L, "from_json: expecting string as an argument");
   }
 
   tmp = lua_tolstring(L, -1, &size);
   json = json_loadb(tmp, size, 0, &err);
   if (!json) {
-    lua_pushfstring(L, "from_json: %s (line: %d, column: %d)", err.text,
-                    err.line, err.column);
-    lua_error(L);
+    return luaL_error(L, "from_json: %s (line: %d, column: %d)", err.text, err.line,
+               err.column);
   }
 
   lua_pop(L, 1);
@@ -558,8 +556,7 @@ static int api_create_request(lua_State *L, api_method_t method,
     strcpy(req->path, tmp);
     break;
   default:
-    lua_pushstring(L, "request function parameter should be string or table");
-    lua_error(L);
+    return luaL_error(L, "request function parameter should be string or table");
   }
 
   if (!req->method) {
@@ -665,8 +662,7 @@ static int api_endpoint(lua_State *L) {
   lua_setuservalue(L, -2);
 
   if (!lua_istable(L, -2)) {
-    lua_pushstring(L, "api: expects table as its argument");
-    lua_error(L);
+    return luaL_error(L, "api: expects table as its argument");
   }
 
   lua_pushstring(L, "proto");
@@ -677,8 +673,7 @@ static int api_endpoint(lua_State *L) {
   } else if (strcmp(s, API_PROTO_HTTPS_STR) == 0) {
     ep->proto = API_PROTO_HTTPS;
   } else {
-    lua_pushstring(L, "api: 'proto' should be http or https");
-    lua_error(L);
+    return luaL_error(L, "api: 'proto' should be http or https");
   }
   lua_pop(L, 1);
 
@@ -694,8 +689,7 @@ static int api_endpoint(lua_State *L) {
   if (!lua_isnil(L, -1)) {
     lua_getuservalue(L, -1);
     if (lua_tointeger(L, -1) != API_TYPE_AUTH) {
-      lua_pushstring(L, "api: 'auth' is not an auth type");
-      lua_error(L);
+      return luaL_error(L, "api: 'auth' is not an auth type");
     }
     auth = lua_touserdata(L, -2);
     ep->auth = malloc(sizeof(api_auth_t));
@@ -741,8 +735,7 @@ static int api_basic_auth(lua_State *L) {
   lua_setuservalue(L, -2);
 
   if (!lua_istable(L, -2)) {
-    lua_pushstring(L, "basic: expects table as its argument");
-    lua_error(L);
+    return luaL_error(L, "basic: expects table as its argument");
   }
 
   auth->type = API_AUTH_BASIC;
@@ -765,8 +758,7 @@ static int api_url_encode(lua_State *L) {
   char *escaped;
 
   if (lua_type(L, -1) != LUA_TSTRING) {
-    lua_pushstring(L, "url_encode expects strings argument");
-    lua_error(L);
+    return luaL_error(L, "url_encode expects strings argument");
   }
 
   c = curl_easy_init();
@@ -861,13 +853,13 @@ static int api_send(lua_State *L) {
   api_request_t *head = NULL, *req;
   char *err = NULL;
   int single_req = 0;
+  const char *tmp;
 
   switch (lua_type(L, -1)) {
   case LUA_TUSERDATA:
     lua_getuservalue(L, -1);
     if (lua_tointeger(L, -1) != API_TYPE_REQUEST) {
-      lua_pushstring(L, "send: expects request as an argument");
-      lua_error(L);
+      return luaL_error(L, "send: expects request as an argument");
     }
     lua_pop(L, 1);
     head = lua_touserdata(L, -1);
@@ -881,22 +873,22 @@ static int api_send(lua_State *L) {
       lua_geti(L, -1, i);
       req = lua_touserdata(L, -1);
       if (!req) {
-        lua_pushfstring(L, "send: expects list of requests as an argument");
-        lua_error(L);
+        return luaL_error(L, "send: expects list of requests as an argument");
       }
       lua_pop(L, 1);
       DL_APPEND(head, req);
     }
     break;
   default:
-    lua_pushstring(L, "send: expects request or list of requests");
-    lua_error(L);
+    return luaL_error(L, "send: expects request or list of requests");
     break;
   }
 
   api_send_requests(head, &err);
   if (err) {
-    lua_pushstring(L, err);
+    luaL_where(L, 0);
+    tmp = lua_tostring(L, -1);
+    lua_pushfstring(L, "%s %s", tmp, err);
     free(err);
     lua_error(L);
   }
@@ -923,8 +915,7 @@ static int api_url_decode(lua_State *L) {
   int len;
 
   if (lua_type(L, -1) != LUA_TSTRING) {
-    lua_pushstring(L, "url_decode expects strings argument");
-    lua_error(L);
+    return luaL_error(L, "url_decode expects strings argument");
   }
 
   c = curl_easy_init();
