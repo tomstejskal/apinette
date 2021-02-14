@@ -1,1 +1,3 @@
-build*/
+apinette
+*.o
+compile_commands.json

@@ -6,7 +6,7 @@
 #include <lualib.h>
 #include <stdarg.h>
 #include <stdlib.h>
-#include <string.h>
+#include <strings.h>
 
 #include "apinette.h"
 #include "base64.h"
@@ -443,6 +443,9 @@ static json_t *api_write_json(lua_State *L) {
       }
     }
     break;
+  default:
+    luaL_error(L, "write_json: unexpected type of argument");
+    return NULL;
   }
 
   lua_pop(L, 1);
