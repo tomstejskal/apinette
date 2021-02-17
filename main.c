@@ -10,7 +10,7 @@
 
 #include "apinette.h"
 #include "base64.h"
-#include "linenoise/linenoise.h"
+#include "linenoise.h"
 #include "utlist.h"
 #include "utstring.h"
 

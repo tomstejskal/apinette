@@ -1,6 +1,7 @@
 PKG_CONFIG = pkg-config
 
 CC = clang
+PREFIX = /usr/local
 
 DEPS = lua libcurl jansson
 DEPS_CFLAGS = $(shell $(PKG_CONFIG) --cflags $(DEPS))
@@ -17,13 +18,16 @@ endif
 CFLAGS += $(DEPS_CFLAGS)
 LDFLAGS += $(DEPS_LDFLAGS)
 
-apinette: main.o apinette.o base64.o linenoise/linenoise.o
+apinette: main.o apinette.o base64.o linenoise.o
 
-main.o: utlist.h utstring.h linenoise/linenoise.h
+main.o: utlist.h utstring.h linenoise.h
 apinette.o: apinette.h utlist.h utstring.h
 base64.o: base64.h
-linenoise/linenoise.o: linenoise/linenoise.h
+linenoise.o: linenoise.h
+
+install: apinette
+	cp $< $(PREFIX)/bin
 
 .PHONY: clean
 clean:
-	-rm -f apinette *.o linenoise/*.o
+	-rm -f apinette *.o
