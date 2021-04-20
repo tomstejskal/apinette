@@ -465,8 +465,8 @@ static int api_from_json(lua_State *L) {
   tmp = lua_tolstring(L, -1, &size);
   json = json_loadb(tmp, size, 0, &err);
   if (!json) {
-    return luaL_error(L, "from_json: %s (line: %d, column: %d)", err.text, err.line,
-               err.column);
+    return luaL_error(L, "from_json: %s (line: %d, column: %d)", err.text,
+                      err.line, err.column);
   }
 
   lua_pop(L, 1);
@@ -559,7 +559,8 @@ static int api_create_request(lua_State *L, api_method_t method,
     strcpy(req->path, tmp);
     break;
   default:
-    return luaL_error(L, "request function parameter should be string or table");
+    return luaL_error(L,
+                      "request function parameter should be string or table");
   }
 
   if (!req->method) {
